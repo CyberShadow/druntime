@@ -40,8 +40,8 @@ IMPDIR=import
 MODEL=32
 override PIC:=$(if $(PIC),-fPIC,)
 
-DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -property $(PIC)
-UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport -property $(PIC)
+DFLAGS=-m$(MODEL) -O -release -gs -inline -w -Isrc -Iimport -property $(PIC)
+UDFLAGS=-m$(MODEL) -O -release -gs -w -Isrc -Iimport -property $(PIC)
 DDOCFLAGS=-m$(MODEL) -c -w -o- -Isrc -Iimport
 
 CFLAGS=-m$(MODEL) -O $(PIC)
