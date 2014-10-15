@@ -284,6 +284,9 @@ $(IMPDIR)\core\sys\freebsd\dlfcn.d : src\core\sys\freebsd\dlfcn.d
 $(IMPDIR)\core\sys\freebsd\execinfo.d : src\core\sys\freebsd\execinfo.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\freebsd\time.d : src\core\sys\freebsd\time.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\freebsd\sys\elf.d : src\core\sys\freebsd\sys\elf.d
 	copy $** $@
 
@@ -324,6 +327,12 @@ $(IMPDIR)\core\sys\linux\link.d : src\core\sys\linux\link.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\linux\termios.d : src\core\sys\linux\termios.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\linux\time.d : src\core\sys\linux\time.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\linux\tipc.d : src\core\sys\linux\tipc.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\linux\sys\inotify.d : src\core\sys\linux\sys\inotify.d
@@ -499,6 +508,9 @@ $(IMPDIR)\core\sys\solaris\sys\types.d : src\core\sys\solaris\sys\types.d
 $(IMPDIR)\core\sys\solaris\sys\priocntl.d : src\core\sys\solaris\sys\priocntl.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\windows\com.d : src\core\sys\windows\com.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\windows\dbghelp.d : src\core\sys\windows\dbghelp.d
 	copy $** $@
 
@@ -506,6 +518,9 @@ $(IMPDIR)\core\sys\windows\dll.d : src\core\sys\windows\dll.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\windows\stacktrace.d : src\core\sys\windows\stacktrace.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\windows\stat.d : src\core\sys\windows\stat.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\windows\threadaux.d : src\core\sys\windows\threadaux.d
