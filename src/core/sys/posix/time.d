@@ -2,7 +2,7 @@
  * D header file for POSIX.
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Sean Kelly,
               Alex Rønne Petersen
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
@@ -122,10 +122,6 @@ else version (OSX)
 else version (Solaris)
 {
     enum CLOCK_MONOTONIC = 4;
-}
-else version (Windows)
-{
-    pragma(msg, "no Windows support for CLOCK_MONOTONIC");
 }
 else version (Android)
 {
