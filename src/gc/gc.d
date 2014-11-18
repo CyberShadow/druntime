@@ -110,6 +110,8 @@ __gshared Duration sweepTime;
 __gshared Duration recoverTime;
 __gshared size_t maxPoolMemory;
 
+static import diamond = core.diamond.gc;
+
 private
 {
     enum USE_CACHE = true;
@@ -289,6 +291,7 @@ class GC
             gcx.reserve(config.initReserve << 20);
         if (config.disable)
             gcx.disabled++;
+        diamond.initialize();
     }
 
 
@@ -306,6 +309,7 @@ class GC
             cstdlib.free(gcx);
             gcx = null;
         }
+        diamond.finalize();
     }
 
 
@@ -451,7 +455,10 @@ class GC
         // when allocating.
         {
             gcLock.lock();
+            diamond.logVerbose();
             p = mallocNoSync(size, bits, *alloc_size, ti);
+            diamond.logMalloc(size, p);
+            diamond.logVerbose();
             gcLock.unlock();
         }
 
@@ -575,7 +582,10 @@ class GC
         // when allocating.
         {
             gcLock.lock();
+            diamond.logVerbose();
             p = mallocNoSync(size, bits, *alloc_size, ti);
+            diamond.logCalloc(size, p);
+            diamond.logVerbose();
             gcLock.unlock();
         }
 
@@ -602,7 +612,10 @@ class GC
         // when allocating.
         {
             gcLock.lock();
+            diamond.logVerbose();
             p = reallocNoSync(p, size, bits, *alloc_size, ti);
+            diamond.logRealloc(size, oldp, p);
+            diamond.logVerbose();
             gcLock.unlock();
         }
 
@@ -759,7 +772,10 @@ class GC
     size_t extend(void* p, size_t minsize, size_t maxsize, const TypeInfo ti = null) nothrow
     {
         gcLock.lock();
+        diamond.logVerbose();
         auto rc = extendNoSync(p, minsize, maxsize, ti);
+        diamond.logExtend(p, rc);
+        diamond.logVerbose();
         gcLock.unlock();
         return rc;
     }
@@ -864,7 +880,10 @@ class GC
         }
 
         gcLock.lock();
+        diamond.logVerbose();
         freeNoSync(p);
+        diamond.logFree(p);
+        diamond.logVerbose();
         gcLock.unlock();
     }
 
@@ -2489,6 +2508,8 @@ struct Gcx
 
         thread_suspendAll();
 
+        logMemoryDump(true);
+
         anychanges = 0;
         for (n = 0; n < npools; n++)
         {
@@ -2809,6 +2830,8 @@ struct Gcx
         debug(COLLECT_PRINTF) printf("\trecovered pages = %d\n", recoveredpages);
         debug(COLLECT_PRINTF) printf("\tfree'd %u bytes, %u pages from %u pools\n", freed, freedpages, npools);
 
+        logMemoryDump(false);
+
         running = 0; // only clear on success
 
         return freedpages + recoveredpages;
@@ -3091,6 +3114,111 @@ struct Gcx
         void log_free(void *p) nothrow { }
         void log_collect() nothrow { }
         void log_parent(void *p, void *parent) nothrow { }
+    }
+
+    void logThreadData(ScanType type, void* p0, void* p1) nothrow
+    {
+        import core.diamond.log;
+
+        auto size = p1-p0;
+        logInt(1 + cast(int)type); // 1=stack, 2=TLS. See ScanType definition
+        logPtr(p0);
+        logInt(size);
+        logData(p0[0..size]);
+    }
+
+    void logBits(ref GCBits bits) nothrow
+    {
+        import core.diamond.log;
+
+        logInt(bits.nwords);
+        if (bits.nbits)
+            logData(bits.data[1..1+bits.nwords]);
+    }
+
+    void logMemoryDump(bool dataDump) nothrow
+    {
+        import core.diamond.log;
+        import core.diamond.types;
+
+        //dataDump ? printf("Dumping memory contents...\n") : printf("Dumping memory map...\n");
+        logInt(dataDump ? PacketType.memoryDump : PacketType.memoryMap);
+        logTime();
+        logStackTrace();
+
+        // log stacks
+        if (dataDump)
+        {
+            thread_scanAllType(&logThreadData);
+            logInt(0); // End marker
+        }
+
+        void logRoots(void* bottom, void* top) nothrow
+        {
+            logPtr(bottom);
+            logPtr(top);
+            if (dataDump)
+            {
+                if (findPool(bottom)) // in heap?
+                    logInt(0);
+                else
+                {
+                    logInt(1);
+                    logData(bottom[0..cast(ubyte*)top-cast(ubyte*)bottom]);
+                }
+            }
+        }
+
+        foreach (ref root; roots)
+            logRoots(cast(void*)&root.proot, cast(void*)(&root.proot + 1));
+
+        foreach (ref range; ranges)
+            logRoots(range.pbot, range.ptop);
+        logRoots(null, null);
+
+        logInt(npools);
+        for (int pn=0; pn<npools; pn++)
+        {
+            auto p = pooltable[pn];
+            logPtr(p.baseAddr);
+            logInt(p.npages);
+            logData(p.pagetable[0..p.npages]);
+            logBits(p.freebits);
+            logBits(p.finals);
+            logBits(p.noscan);
+            if (dataDump)
+            {
+                version(DIAMOND_MEMLOG_CRC32)
+                {
+                    assert(pn < MAX_POOLS);
+                    if (poolCRCs[pn] is null)
+                    {
+                        poolCRCs[pn] = cast(uint*)stdmalloc(4*p.npages);
+                        poolCRCs[pn][0..p.npages] = 0;
+                    }
+                }
+                for (int pg=0; pg<p.npages; pg++)
+                {
+                    bool doSave = true;
+                    auto page = p.baseAddr[pg*PAGESIZE..(pg+1)*PAGESIZE];
+                    version(DIAMOND_MEMLOG_CRC32)
+                    {
+                        uint newCRC = fastCRC(page);
+                        if (newCRC==poolCRCs[pn][pg] && newCRC!=0)
+                            doSave = false;
+                        else
+                            poolCRCs[pn][pg] = newCRC;
+                    }
+                    logInt(doSave?1:0);
+                    if (doSave)
+                        logData(page);
+                }
+            }
+        }
+        if (dataDump)
+            logData(bucket);
+        logFlush();
+        //printf("Done\n");
     }
 }
 

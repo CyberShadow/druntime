@@ -205,6 +205,18 @@ $(IMPDIR)\core\internal\hash.d : src\core\internal\hash.d
 $(IMPDIR)\core\internal\traits.d : src\core\internal\traits.d
 	copy $** $@
 
+$(IMPDIR)\core\diamond\api.d : src\core\diamond\api.d
+	copy $** $@
+
+$(IMPDIR)\core\diamond\gc.d : src\core\diamond\gc.d
+	copy $** $@
+
+$(IMPDIR)\core\diamond\log.d : src\core\diamond\log.d
+	copy $** $@
+
+$(IMPDIR)\core\diamond\types.d : src\core\diamond\types.d
+	copy $** $@
+
 $(IMPDIR)\core\stdc\complex.d : src\core\stdc\complex.d
 	copy $** $@
 

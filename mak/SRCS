@@ -19,6 +19,11 @@ SRCS=\
 	src\core\internal\hash.d \
 	src\core\internal\traits.d \
 	\
+	src\core\diamond\api.d \
+	src\core\diamond\gc.d \
+	src\core\diamond\log.d \
+	src\core\diamond\types.d \
+	\
 	src\core\stdc\config.d \
 	src\core\stdc\ctype.d \
 	src\core\stdc\errno.d \

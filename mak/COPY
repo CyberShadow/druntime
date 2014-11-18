@@ -18,6 +18,11 @@ COPY=\
 	$(IMPDIR)\core\internal\hash.d \
 	$(IMPDIR)\core\internal\traits.d \
 	\
+	$(IMPDIR)\core\diamond\api.d \
+	$(IMPDIR)\core\diamond\gc.d \
+	$(IMPDIR)\core\diamond\log.d \
+	$(IMPDIR)\core\diamond\types.d \
+	\
 	$(IMPDIR)\core\stdc\complex.d \
 	$(IMPDIR)\core\stdc\config.d \
 	$(IMPDIR)\core\stdc\ctype.d \
