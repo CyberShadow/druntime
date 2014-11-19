@@ -3148,6 +3148,22 @@ body
     return Thread.getThis().topContext().bstack;
 }
 
+/**
+ * For Diamond.
+ * Attempt to return a valid result even during thread initialization.
+ */
+extern (C) void* thread_stackBottomSafe() nothrow
+{
+    auto thread = Thread.getThis();
+    if (thread)
+    {
+        auto context = thread.topContext();
+        if (context && context.bstack)
+            return context.bstack;
+    }
+    return getStackBottom();
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Thread Group

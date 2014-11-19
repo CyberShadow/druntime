@@ -36,12 +36,12 @@ void** getBasePtr()
         return null;
 }
 
-extern (C) void* thread_stackBottom();
+extern (C) void* thread_stackBottomSafe() nothrow;
 
 void logStackTrace()
 {
 	auto  stackTop    = getBasePtr();
-	auto  stackBottom = cast(void**) thread_stackBottom();
+	auto  stackBottom = cast(void**) thread_stackBottomSafe();
 	void* dummy;
 
 	if (stackTop && &dummy < stackTop && stackTop < stackBottom)
