@@ -134,6 +134,7 @@ $(IMPDIR)\core\sync\semaphore.di : src\core\sync\semaphore.d
 copydir: $(IMPDIR)
 	mkdir $(IMPDIR)\core\stdc
 	mkdir $(IMPDIR)\core\internal
+	mkdir $(IMPDIR)\core\diamond
 	mkdir $(IMPDIR)\core\sys\freebsd\sys
 	mkdir $(IMPDIR)\core\sys\linux\sys
 	mkdir $(IMPDIR)\core\sys\osx\mach
