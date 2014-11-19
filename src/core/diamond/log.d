@@ -70,7 +70,7 @@ void logOpen()
 		time_t t = time(null);
 		tm *tm = localtime(&t);
 		
-		sprintf(buf.ptr, "%sdiamond_%d-%02d-%02d_%02d.%02d.%02d.mem", logDir, 1900+tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+		sprintf(buf.ptr, "%sdiamond_%d-%02d-%02d_%02d.%02d.%02d.mem", logDir, 1900+tm.tm_year, 1+tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		logFile = buf.ptr;
 	}
 	log = fopen(logFile, "wb");
