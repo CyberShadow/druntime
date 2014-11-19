@@ -8,32 +8,30 @@
 
 module core.diamond.gc;
 
+import core.stdc.stdlib : getenv;
+
 import core.diamond.log;
 import core.diamond.types;
 
 nothrow:
 @nogc:
 
-// TODO: make this configurable at runtime,
-// e.g. through an environment variable
-enum bool logEnabled = true;
-
 void initialize()
 {
-	if (logEnabled)
+	if (getenv("DIAMOND_LOG"))
 		logOpen();
 }
 
 void finalize()
 {
-	if (logEnabled)
+	if (log)
 		logClose();
 }
 
 void logMalloc(size_t size, void* p)
 {
 	//printf("Allocated %d bytes at %08X\n", size, p); printStackTrace();
-	if (logEnabled)
+	if (log)
 		if (p)
 		{
 			logInt(PacketType.malloc);
@@ -47,7 +45,7 @@ void logMalloc(size_t size, void* p)
 void logCalloc(size_t size, void* p)
 {
 	//printf("Allocated %d initialized bytes at %08X\n", size, p); printStackTrace();
-	if (logEnabled)
+	if (log)
 		if (p)
 		{
 			logInt(PacketType.calloc);
@@ -61,7 +59,7 @@ void logCalloc(size_t size, void* p)
 void logRealloc(size_t size, void* p1, void* p2)
 {
 	//printf("Reallocated %d bytes from %08X to %08X\n", size, p1, p2); printStackTrace();
-	if (logEnabled)
+	if (log)
 		if (p2)
 		{
 			logInt(PacketType.realloc);
@@ -75,7 +73,7 @@ void logRealloc(size_t size, void* p1, void* p2)
 
 void logExtend(void* p, size_t newSize)
 {
-	if (logEnabled)
+	if (log)
 		if (newSize)
 		{
 			logInt(PacketType.extend);
@@ -88,7 +86,7 @@ void logExtend(void* p, size_t newSize)
 
 void logFree(void *p)
 {
-	if (logEnabled)
+	if (log)
 	{
 		logInt(PacketType.free);
 		logTime();

@@ -12,14 +12,12 @@ import core.diamond.types;
 
 import core.stdc.stdio;
 import core.stdc.time;
+import core.stdc.stdlib : getenv;
 
 nothrow:
 @nogc:
 
-// TODO: make this configurable
-static const char* LOGDIR = "";
-
-__gshared FILE* log;
+__gshared FILE* log = null;
 
 void logInt(ulong i) { fwrite(&i, 4, 1, log); }
 void logPtr(void* p) { logInt(cast(ulong)p); }
@@ -61,11 +59,21 @@ void logStackTrace()
 
 void logOpen()
 {
-	time_t t = time(null);
-	tm *tm = localtime(&t);
-	char[256] name;
-	sprintf(name.ptr, "%sdiamond_%d-%02d-%02d_%02d.%02d.%02d.mem", LOGDIR ? LOGDIR : "", 1900+tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-	log = fopen(name.ptr, "wb");
+	char[256] buf;
+
+	const(char) *logFile = getenv("DIAMOND_LOGFILE");
+	if (!logFile)
+	{
+		const(char)* logDir = getenv("DIAMOND_LOGDIR");
+		if (!logDir) logDir = "";
+
+		time_t t = time(null);
+		tm *tm = localtime(&t);
+		
+		sprintf(buf.ptr, "%sdiamond_%d-%02d-%02d_%02d.%02d.%02d.mem", logDir, 1900+tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+		logFile = buf.ptr;
+	}
+	log = fopen(logFile, "wb");
 	logInt(LogFormatVersion);
 }
 
