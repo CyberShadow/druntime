@@ -3141,6 +3141,9 @@ struct Gcx
         import core.diamond.log;
         import core.diamond.types;
 
+        if (!log)
+            return;
+
         //dataDump ? printf("Dumping memory contents...\n") : printf("Dumping memory map...\n");
         logInt(dataDump ? PacketType.memoryDump : PacketType.memoryMap);
         logTime();
