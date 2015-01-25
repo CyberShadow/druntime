@@ -15,7 +15,7 @@ CP=cp
 DOCDIR=doc
 IMPDIR=import
 
-DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport
+DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -g -gs
 UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport
 DDOCFLAGS=-c -w -o- -Isrc -Iimport
 
