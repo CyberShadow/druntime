@@ -22,7 +22,7 @@ private
     import core.stdc.string;
     import rt.util.string;
 
-    version (Win64)
+    version (CRuntime_Microsoft)
         alias core.stdc.stdlib._strtoui64 strtoull;
 }
 
@@ -519,11 +519,12 @@ static void trace_pro(char[] id)
     timer_t starttime;
     timer_t t;
 
+    if (!trace_inited)
+        trace_init();                   // initialize package
+
     QueryPerformanceCounter(&starttime);
     if (id.length == 0)
         return;
-    if (!trace_inited)
-        trace_init();                   // initialize package
     n = stack_malloc();
     n.prev = trace_tos;
     trace_tos = n;
@@ -675,7 +676,7 @@ static void trace_merge()
     SymPair *sfanin;
     SymPair **psp;
 
-    if (trace_logfilename && (fp = fopen(trace_logfilename.ptr,"r")) !is null)
+    if (trace_logfilename.length && (fp = fopen(trace_logfilename.ptr,"r")) !is null)
     {
         buf = null;
         sfanin = null;

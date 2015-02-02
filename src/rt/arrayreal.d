@@ -2,7 +2,7 @@
  * Contains SSE2 and MMX versions of certain operations for real.
  *
  * Copyright: Copyright Digital Mars 2008 - 2010.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Walter Bright, based on code originally written by Burton Radons
  */
 
@@ -16,6 +16,7 @@ module rt.arrayreal;
 // debug=PRINTF
 
 import core.cpuid;
+import rt.util.array;
 
 version (unittest)
 {
@@ -24,6 +25,8 @@ version (unittest)
      */
     int cpuid;
     const int CPUID_MAX = 1;
+
+nothrow:
     @property bool mmx()      { return cpuid == 1 && core.cpuid.mmx; }
     @property bool sse()      { return cpuid == 2 && core.cpuid.sse; }
     @property bool sse2()     { return cpuid == 3 && core.cpuid.sse2; }
@@ -39,12 +42,6 @@ else
 
 //version = log;
 
-@trusted pure nothrow
-bool disjoint(T)(T[] a, T[] b)
-{
-    return (a.ptr + a.length <= b.ptr || b.ptr + b.length <= a.ptr);
-}
-
 alias real T;
 
 extern (C) @trusted nothrow:
@@ -57,14 +54,10 @@ extern (C) @trusted nothrow:
  */
 
 T[] _arraySliceSliceAddSliceAssign_r(T[] a, T[] c, T[] b)
-in
 {
-        assert(a.length == b.length && b.length == c.length);
-        assert(disjoint(a, b));
-        assert(disjoint(a, c));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+    enforceTypedArraysConformable("vector operation", a, c);
+
     foreach (i; 0..a.length)
         a[i] = b[i] + c[i];
     return a;
@@ -115,14 +108,10 @@ unittest
  */
 
 T[] _arraySliceSliceMinSliceAssign_r(T[] a, T[] c, T[] b)
-in
 {
-        assert(a.length == b.length && b.length == c.length);
-        assert(disjoint(a, b));
-        assert(disjoint(a, c));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+    enforceTypedArraysConformable("vector operation", a, c);
+
     foreach (i; 0..a.length)
         a[i] = b[i] - c[i];
     return a;
@@ -184,13 +173,9 @@ T[] _arraySliceExpMulSliceMinass_r(T[] a, T value, T[] b)
  */
 
 T[] _arraySliceExpMulSliceAddass_r(T[] a, T value, T[] b)
-in
 {
-        assert(a.length == b.length);
-        assert(disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;

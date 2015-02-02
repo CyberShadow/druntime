@@ -2,7 +2,7 @@
  * Contains the implementation for object monitors.
  *
  * Copyright: Copyright Digital Mars 2000 - 2011.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Walter Bright, Sean Kelly
  */
 
@@ -14,6 +14,8 @@
 module rt.monitor_;
 
 //debug=PRINTF;
+
+nothrow:
 
 private
 {
@@ -36,6 +38,10 @@ private
     {
         version = USE_PTHREADS;
     }
+    else version( Android )
+    {
+        version = USE_PTHREADS;
+    }
 
     // This is what the monitor reference in Object points to
     alias Object.Monitor        IMonitor;
@@ -43,8 +49,15 @@ private
 
     version( Windows )
     {
-        version (Win32)
+        version (CRuntime_DigitalMars)
+        {
             pragma(lib, "snn.lib");
+        }
+        else version (CRuntime_Microsoft)
+        {
+            pragma(lib, "libcmt.lib");
+            pragma(lib, "oldnames.lib");
+        }
         import core.sys.windows.windows;
 
         struct Monitor
@@ -72,12 +85,12 @@ private
         static assert(0, "Unsupported platform");
     }
 
-    Monitor* getMonitor(Object h)
+    Monitor* getMonitor(Object h) pure
     {
         return cast(Monitor*) h.__monitor;
     }
 
-    void setMonitor(Object h, Monitor* m)
+    void setMonitor(Object h, Monitor* m) pure
     {
         h.__monitor = m;
     }

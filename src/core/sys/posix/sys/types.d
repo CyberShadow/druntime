@@ -2,7 +2,7 @@
  * D header file for POSIX.
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Sean Kelly,
               Alex Rønne Petersen
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
@@ -107,7 +107,11 @@ else version( OSX )
     alias int       blksize_t;
     alias int       dev_t;
     alias uint      gid_t;
-    alias uint      ino_t;
+    version( DARWIN_USE_64_BIT_INODE ) {
+        alias ulong ino_t;
+    } else {
+        alias uint  ino_t;
+    }
     alias ushort    mode_t;
     alias ushort    nlink_t;
     alias long      off_t;
@@ -167,7 +171,7 @@ else version (Solaris)
     }
 
     alias uint blksize_t;
-    alias ulong dev_t;
+    alias c_ulong dev_t;
     alias uid_t gid_t;
     alias uint mode_t;
     alias uint nlink_t;
@@ -175,6 +179,28 @@ else version (Solaris)
     alias c_long ssize_t;
     alias c_long time_t;
     alias uint uid_t;
+}
+else version( Android )
+{
+    version(X86)
+    {
+        alias c_ulong   blkcnt_t;
+        alias c_ulong   blksize_t;
+        alias uint      dev_t;
+        alias uint      gid_t;
+        alias c_ulong   ino_t;
+        alias ushort    mode_t;
+        alias ushort    nlink_t;
+        alias c_long    off_t;
+        alias int       pid_t;
+        alias c_long    ssize_t;
+        alias c_long    time_t;
+        alias uint      uid_t;
+    }
+    else
+    {
+        static assert(false, "Architecture not supported.");
+    }
 }
 else
 {
@@ -256,6 +282,23 @@ else version (Solaris)
     alias id_t poolid_t;
     alias id_t zoneid_t;
     alias id_t ctid_t;
+}
+else version( Android )
+{
+    version(X86)
+    {
+        alias c_ulong  fsblkcnt_t;
+        alias c_ulong  fsfilcnt_t;
+        alias c_long   clock_t;
+        alias uint     id_t;
+        alias int      key_t;
+        alias c_long   suseconds_t;
+        alias c_long   useconds_t;
+    }
+    else
+    {
+        static assert(false, "Architecture not supported.");
+    }
 }
 else
 {
@@ -434,7 +477,7 @@ version (linux)
 
     union pthread_attr_t
     {
-        byte __size[__SIZEOF_PTHREAD_ATTR_T];
+        byte[__SIZEOF_PTHREAD_ATTR_T] __size;
         c_long __align;
     }
 
@@ -450,13 +493,13 @@ version (linux)
 
     union pthread_cond_t
     {
-        byte __size[__SIZEOF_PTHREAD_COND_T];
+        byte[__SIZEOF_PTHREAD_COND_T] __size;
         long  __align;
     }
 
     union pthread_condattr_t
     {
-        byte __size[__SIZEOF_PTHREAD_CONDATTR_T];
+        byte[__SIZEOF_PTHREAD_CONDATTR_T] __size;
         int __align;
     }
 
@@ -464,13 +507,13 @@ version (linux)
 
     union pthread_mutex_t
     {
-        byte __size[__SIZEOF_PTHREAD_MUTEX_T];
+        byte[__SIZEOF_PTHREAD_MUTEX_T] __size;
         c_long __align;
     }
 
     union pthread_mutexattr_t
     {
-        byte __size[__SIZEOF_PTHREAD_MUTEXATTR_T];
+        byte[__SIZEOF_PTHREAD_MUTEXATTR_T] __size;
         int __align;
     }
 
@@ -478,13 +521,13 @@ version (linux)
 
     struct pthread_rwlock_t
     {
-        byte __size[__SIZEOF_PTHREAD_RWLOCK_T];
+        byte[__SIZEOF_PTHREAD_RWLOCK_T] __size;
         c_long __align;
     }
 
     struct pthread_rwlockattr_t
     {
-        byte __size[__SIZEOF_PTHREAD_RWLOCKATTR_T];
+        byte[__SIZEOF_PTHREAD_RWLOCKATTR_T] __size;
         c_long __align;
     }
 
@@ -688,6 +731,55 @@ else version (Solaris)
 
     alias uint pthread_key_t;
 }
+else version( Android )
+{
+    version(X86)
+    {
+        struct pthread_attr_t
+        {
+            uint    flags;
+            void*   stack_base;
+            size_t  stack_size;
+            size_t  guard_size;
+            int     sched_policy;
+            int     sched_priority;
+        }
+    }
+    else
+    {
+        static assert(false, "Architecture not supported.");
+    }
+
+    struct pthread_cond_t
+    {
+        int value; //volatile
+    }
+
+    alias c_long pthread_condattr_t;
+    alias int    pthread_key_t;
+
+    struct pthread_mutex_t
+    {
+        int value; //volatile
+    }
+
+    alias c_long pthread_mutexattr_t;
+    alias int    pthread_once_t; //volatile
+
+    struct pthread_rwlock_t
+    {
+        pthread_mutex_t  lock;
+        pthread_cond_t   cond;
+        int              numLocks;
+        int              writerThreadId;
+        int              pendingReaders;
+        int              pendingWriters;
+        void*[4]         reserved;
+    }
+
+    alias int    pthread_rwlockattr_t;
+    alias c_long pthread_t;
+}
 else
 {
     static assert(false, "Unsupported platform");
@@ -705,13 +797,13 @@ version( linux )
 {
     struct pthread_barrier_t
     {
-        byte __size[__SIZEOF_PTHREAD_BARRIER_T];
+        byte[__SIZEOF_PTHREAD_BARRIER_T] __size;
         c_long __align;
     }
 
     struct pthread_barrierattr_t
     {
-        byte __size[__SIZEOF_PTHREAD_BARRIERATTR_T];
+        byte[__SIZEOF_PTHREAD_BARRIERATTR_T] __size;
         int __align;
     }
 }
@@ -739,6 +831,9 @@ else version (Solaris)
     {
         void* __pthread_barrierattrp;
     }
+}
+else version( Android )
+{
 }
 else
 {

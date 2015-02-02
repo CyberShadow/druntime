@@ -2,8 +2,9 @@
  * Contains SSE2 and MMX versions of certain operations for double.
  *
  * Copyright: Copyright Digital Mars 2008 - 2010.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
- * Authors:   Walter Bright, based on code originally written by Burton Radons
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
+ * Authors:   Walter Bright, based on code originally written by Burton Radons;
+ *            Jim Crapuchettes (64 bit SSE code)
  */
 
 /*          Copyright Digital Mars 2008 - 2010.
@@ -13,9 +14,10 @@
  */
 module rt.arraydouble;
 
-// debug=PRINTF
+// debug=PRINTF;
 
 private import core.cpuid;
+import rt.util.array;
 
 version (unittest)
 {
@@ -24,6 +26,8 @@ version (unittest)
      */
     int cpuid;
     const int CPUID_MAX = 5;
+
+nothrow:
     @property bool mmx()      { return cpuid == 1 && core.cpuid.mmx; }
     @property bool sse()      { return cpuid == 2 && core.cpuid.sse; }
     @property bool sse2()     { return cpuid == 3 && core.cpuid.sse2; }
@@ -38,12 +42,6 @@ else
 }
 
 //version = log;
-
-@trusted pure nothrow
-bool disjoint(T)(T[] a, T[] b)
-{
-    return (a.ptr + a.length <= b.ptr || b.ptr + b.length <= a.ptr);
-}
 
 /* Performance figures measured by Burton Radons
  */
@@ -60,14 +58,10 @@ extern (C) @trusted nothrow:
  */
 
 T[] _arraySliceSliceAddSliceAssign_d(T[] a, T[] c, T[] b)
-in
 {
-        assert(a.length == b.length && b.length == c.length);
-        assert(disjoint(a, b));
-        assert(disjoint(a, c));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+    enforceTypedArraysConformable("vector operation", a, c);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -76,12 +70,12 @@ body
     version (D_InlineAsm_X86)
     {
         // SSE2 version is 333% faster
-        if (sse2 && b.length >= 16)
+        if (sse2 && b.length >= 8)
         {
-            auto n = aptr + (b.length & ~15);
+            auto n = aptr + (b.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr; // left operand
                 mov ECX, cptr; // right operand
@@ -115,6 +109,51 @@ body
                 mov aptr, ESI;
                 mov bptr, EAX;
                 mov cptr, ECX;
+            }
+        }
+    }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (b.length >= 8)
+        {
+            auto n = aptr + (b.length & ~7);
+
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr; // left operand
+                mov RCX, cptr; // right operand
+                mov RSI, aptr; // destination operand
+                mov RDI, n;    // end comparison
+
+                align 8;
+            startsseloopb:
+                movupd XMM0, [RAX];
+                movupd XMM1, [RAX+16];
+                movupd XMM2, [RAX+32];
+                movupd XMM3, [RAX+48];
+                add RAX, 64;
+                movupd XMM4, [RCX];
+                movupd XMM5, [RCX+16];
+                movupd XMM6, [RCX+32];
+                movupd XMM7, [RCX+48];
+                add RSI, 64;
+                addpd XMM0, XMM4;
+                addpd XMM1, XMM5;
+                addpd XMM2, XMM6;
+                addpd XMM3, XMM7;
+                add RCX, 64;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopb;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+                mov cptr, RCX;
             }
         }
     }
@@ -172,14 +211,10 @@ unittest
  */
 
 T[] _arraySliceSliceMinSliceAssign_d(T[] a, T[] c, T[] b)
-in
 {
-        assert(a.length == b.length && b.length == c.length);
-        assert(disjoint(a, b));
-        assert(disjoint(a, c));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+    enforceTypedArraysConformable("vector operation", a, c);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -192,8 +227,8 @@ body
         {
             auto n = aptr + (b.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr; // left operand
                 mov ECX, cptr; // right operand
@@ -227,6 +262,51 @@ body
                 mov aptr, ESI;
                 mov bptr, EAX;
                 mov cptr, ECX;
+            }
+        }
+    }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (b.length >= 8)
+        {
+            auto n = aptr + (b.length & ~7);
+
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr; // left operand
+                mov RCX, cptr; // right operand
+                mov RSI, aptr; // destination operand
+                mov RDI, n;    // end comparison
+
+                align 8;
+            startsseloopb:
+                movupd XMM0, [RAX];
+                movupd XMM1, [RAX+16];
+                movupd XMM2, [RAX+32];
+                movupd XMM3, [RAX+48];
+                add RAX, 64;
+                movupd XMM4, [RCX];
+                movupd XMM5, [RCX+16];
+                movupd XMM6, [RCX+32];
+                movupd XMM7, [RCX+48];
+                add RSI, 64;
+                subpd XMM0, XMM4;
+                subpd XMM1, XMM5;
+                subpd XMM2, XMM6;
+                subpd XMM3, XMM7;
+                add RCX, 64;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopb;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+                mov cptr, RCX;
             }
         }
     }
@@ -285,13 +365,9 @@ unittest
  */
 
 T[] _arraySliceExpAddSliceAssign_d(T[] a, T value, T[] b)
-in
 {
-    assert(a.length == b.length);
-    assert(disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     //printf("_arraySliceExpAddSliceAssign_d()\n");
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
@@ -304,8 +380,8 @@ body
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr;
                 mov ESI, aptr;
@@ -337,7 +413,48 @@ body
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr;
+                mov RSI, aptr;
+                mov RDI, n;
+                movsd XMM4, value;
+                shufpd XMM4, XMM4, 0;
+
+                align 8;
+            startsseloop:
+                add RSI, 64;
+                movupd XMM0, [RAX];
+                movupd XMM1, [RAX+16];
+                movupd XMM2, [RAX+32];
+                movupd XMM3, [RAX+48];
+                add RAX, 64;
+                addpd XMM0, XMM4;
+                addpd XMM1, XMM4;
+                addpd XMM2, XMM4;
+                addpd XMM3, XMM4;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloop;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ = *bptr++ + value;
 
@@ -390,7 +507,6 @@ unittest
 
 T[] _arrayExpSliceAddass_d(T[] a, T value)
 {
-    //printf("_arrayExpSliceAddass_d(a.length = %d, value = %Lg)\n", a.length, cast(real)value);
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
 
@@ -402,8 +518,8 @@ T[] _arrayExpSliceAddass_d(T[] a, T value)
             auto n = aptr + (a.length & ~7);
             if (aptr < n)
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov ESI, aptr;
                 mov EDI, n;
@@ -432,7 +548,46 @@ T[] _arrayExpSliceAddass_d(T[] a, T value)
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
+            if (aptr < n)
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RSI, aptr;
+                mov RDI, n;
+                movsd XMM4, value;
+                shufpd XMM4, XMM4, 0;
+
+                align 8;
+            startsseloopa:
+                movupd XMM0, [RSI];
+                movupd XMM1, [RSI+16];
+                movupd XMM2, [RSI+32];
+                movupd XMM3, [RSI+48];
+                add RSI, 64;
+                addpd XMM0, XMM4;
+                addpd XMM1, XMM4;
+                addpd XMM2, XMM4;
+                addpd XMM3, XMM4;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopa;
+
+                mov aptr, RSI;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ += value;
 
@@ -485,14 +640,9 @@ unittest
  */
 
 T[] _arraySliceSliceAddass_d(T[] a, T[] b)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
-    //printf("_arraySliceSliceAddass_d()\n");
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -504,8 +654,8 @@ body
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov ECX, bptr; // right operand
                 mov ESI, aptr; // destination operand
@@ -539,7 +689,81 @@ body
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RCX, bptr; // right operand
+                mov RSI, aptr; // destination operand
+                mov RDI, n; // end comparison
+
+                test RSI,0xF;       // test if a is aligned on 16-byte boundary
+                jne notaligned;     //  not aligned, must use movupd instructions
+                test RCX,0xF;       // test if b is aligned on 16-byte boundary
+                jne notaligned;     //  not aligned, must use movupd instructions
+
+                align 8;
+            startsseloopa:
+                movapd XMM0, [RSI];
+                movapd XMM1, [RSI+16];
+                movapd XMM2, [RSI+32];
+                movapd XMM3, [RSI+48];
+                add RSI, 64;
+                movapd XMM4, [RCX];
+                movapd XMM5, [RCX+16];
+                movapd XMM6, [RCX+32];
+                movapd XMM7, [RCX+48];
+                add RCX, 64;
+                addpd XMM0, XMM4;
+                addpd XMM1, XMM5;
+                addpd XMM2, XMM6;
+                addpd XMM3, XMM7;
+                movapd [RSI+ 0-64], XMM0;
+                movapd [RSI+16-64], XMM1;
+                movapd [RSI+32-64], XMM2;
+                movapd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopa;   // "jump on below"
+                jmp donesseloops;  // finish up
+
+            notaligned:
+                align 8;
+            startsseloopb:
+                movupd XMM0, [RSI];
+                movupd XMM1, [RSI+16];
+                movupd XMM2, [RSI+32];
+                movupd XMM3, [RSI+48];
+                add RSI, 64;
+                movupd XMM4, [RCX];
+                movupd XMM5, [RCX+16];
+                movupd XMM6, [RCX+32];
+                movupd XMM7, [RCX+48];
+                add RCX, 64;
+                addpd XMM0, XMM4;
+                addpd XMM1, XMM5;
+                addpd XMM2, XMM6;
+                addpd XMM3, XMM7;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopb;
+
+            donesseloops:
+                mov aptr, RSI;
+                mov bptr, RCX;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ += *bptr++;
 
@@ -592,14 +816,9 @@ unittest
  */
 
 T[] _arraySliceExpMinSliceAssign_d(T[] a, T value, T[] b)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
-    //printf("_arraySliceExpMinSliceAssign_d()\n");
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -611,8 +830,8 @@ body
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr;
                 mov ESI, aptr;
@@ -644,7 +863,48 @@ body
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr;
+                mov RSI, aptr;
+                mov RDI, n;
+                movsd XMM4, value;
+                shufpd XMM4, XMM4, 0;
+
+                align 8;
+            startsseloop:
+                add RSI, 64;
+                movupd XMM0, [RAX];
+                movupd XMM1, [RAX+16];
+                movupd XMM2, [RAX+32];
+                movupd XMM3, [RAX+48];
+                add RAX, 64;
+                subpd XMM0, XMM4;
+                subpd XMM1, XMM4;
+                subpd XMM2, XMM4;
+                subpd XMM3, XMM4;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloop;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ = *bptr++ - value;
 
@@ -696,14 +956,9 @@ unittest
  */
 
 T[] _arrayExpSliceMinSliceAssign_d(T[] a, T[] b, T value)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
-    //printf("_arrayExpSliceMinSliceAssign_d()\n");
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -715,8 +970,8 @@ body
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr;
                 mov ESI, aptr;
@@ -752,7 +1007,52 @@ body
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr;
+                mov RSI, aptr;
+                mov RDI, n;
+                movsd XMM4, value;
+                shufpd XMM4, XMM4, 0;
+
+                align 8;
+            startsseloop:
+                add RSI, 64;
+                movapd XMM5, XMM4;
+                movapd XMM6, XMM4;
+                movupd XMM0, [RAX];
+                movupd XMM1, [RAX+16];
+                movupd XMM2, [RAX+32];
+                movupd XMM3, [RAX+48];
+                add RAX, 64;
+                subpd XMM5, XMM0;
+                subpd XMM6, XMM1;
+                movupd [RSI+ 0-64], XMM5;
+                movupd [RSI+16-64], XMM6;
+                movapd XMM5, XMM4;
+                movapd XMM6, XMM4;
+                subpd XMM5, XMM2;
+                subpd XMM6, XMM3;
+                movupd [RSI+32-64], XMM5;
+                movupd [RSI+48-64], XMM6;
+                cmp RSI, RDI;
+                jb startsseloop;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ = value - *bptr++;
 
@@ -805,7 +1105,6 @@ unittest
 
 T[] _arrayExpSliceMinass_d(T[] a, T value)
 {
-    //printf("_arrayExpSliceMinass_d(a.length = %d, value = %Lg)\n", a.length, cast(real)value);
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
 
@@ -817,8 +1116,8 @@ T[] _arrayExpSliceMinass_d(T[] a, T value)
             auto n = aptr + (a.length & ~7);
             if (aptr < n)
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov ESI, aptr;
                 mov EDI, n;
@@ -847,7 +1146,46 @@ T[] _arrayExpSliceMinass_d(T[] a, T value)
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
+            if (aptr < n)
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RSI, aptr;
+                mov RDI, n;
+                movsd XMM4, value;
+                shufpd XMM4, XMM4, 0;
+
+                align 8;
+            startsseloopa:
+                movupd XMM0, [RSI];
+                movupd XMM1, [RSI+16];
+                movupd XMM2, [RSI+32];
+                movupd XMM3, [RSI+48];
+                add RSI, 64;
+                subpd XMM0, XMM4;
+                subpd XMM1, XMM4;
+                subpd XMM2, XMM4;
+                subpd XMM3, XMM4;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopa;
+
+                mov aptr, RSI;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ -= value;
 
@@ -900,14 +1238,9 @@ unittest
  */
 
 T[] _arraySliceSliceMinass_d(T[] a, T[] b)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
-    //printf("_arraySliceSliceMinass_d()\n");
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -919,8 +1252,8 @@ body
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov ECX, bptr; // right operand
                 mov ESI, aptr; // destination operand
@@ -954,7 +1287,50 @@ body
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RCX, bptr; // right operand
+                mov RSI, aptr; // destination operand
+                mov RDI, n; // end comparison
+
+                align 8;
+            startsseloopb:
+                movupd XMM0, [RSI];
+                movupd XMM1, [RSI+16];
+                movupd XMM2, [RSI+32];
+                movupd XMM3, [RSI+48];
+                add RSI, 64;
+                movupd XMM4, [RCX];
+                movupd XMM5, [RCX+16];
+                movupd XMM6, [RCX+32];
+                movupd XMM7, [RCX+48];
+                add RCX, 64;
+                subpd XMM0, XMM4;
+                subpd XMM1, XMM5;
+                subpd XMM2, XMM6;
+                subpd XMM3, XMM7;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopb;
+
+                mov aptr, RSI;
+                mov bptr, RCX;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ -= *bptr++;
 
@@ -1007,14 +1383,9 @@ unittest
  */
 
 T[] _arraySliceExpMulSliceAssign_d(T[] a, T value, T[] b)
-in
 {
-    assert(a.length == b.length);
-    assert(disjoint(a, b));
-}
-body
-{
-    //printf("_arraySliceExpMulSliceAssign_d()\n");
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -1026,8 +1397,8 @@ body
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr;
                 mov ESI, aptr;
@@ -1059,7 +1430,48 @@ body
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr;
+                mov RSI, aptr;
+                mov RDI, n;
+                movsd XMM4, value;
+                shufpd XMM4, XMM4, 0;
+
+                align 8;
+            startsseloop:
+                add RSI, 64;
+                movupd XMM0, [RAX];
+                movupd XMM1, [RAX+16];
+                movupd XMM2, [RAX+32];
+                movupd XMM3, [RAX+48];
+                add RAX, 64;
+                mulpd XMM0, XMM4;
+                mulpd XMM1, XMM4;
+                mulpd XMM2, XMM4;
+                mulpd XMM3, XMM4;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloop;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ = *bptr++ * value;
 
@@ -1111,15 +1523,10 @@ unittest
  */
 
 T[] _arraySliceSliceMulSliceAssign_d(T[] a, T[] c, T[] b)
-in
 {
-        assert(a.length == b.length && b.length == c.length);
-        assert(disjoint(a, b));
-        assert(disjoint(a, c));
-}
-body
-{
-    //printf("_arraySliceSliceMulSliceAssign_d()\n");
+    enforceTypedArraysConformable("vector operation", a, b);
+    enforceTypedArraysConformable("vector operation", a, c);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -1132,8 +1539,8 @@ body
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr; // left operand
                 mov ECX, cptr; // right operand
@@ -1170,7 +1577,53 @@ body
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr; // left operand
+                mov RCX, cptr; // right operand
+                mov RSI, aptr; // destination operand
+                mov RDI, n; // end comparison
+
+                align 8;
+            startsseloopb:
+                movupd XMM0, [RAX];
+                movupd XMM1, [RAX+16];
+                movupd XMM2, [RAX+32];
+                movupd XMM3, [RAX+48];
+                add RSI, 64;
+                movupd XMM4, [RCX];
+                movupd XMM5, [RCX+16];
+                movupd XMM6, [RCX+32];
+                movupd XMM7, [RCX+48];
+                add RAX, 64;
+                mulpd XMM0, XMM4;
+                mulpd XMM1, XMM5;
+                mulpd XMM2, XMM6;
+                mulpd XMM3, XMM7;
+                add RCX, 64;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopb;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+                mov cptr, RCX;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ = *bptr++ * *cptr++;
 
@@ -1223,7 +1676,6 @@ unittest
 
 T[] _arrayExpSliceMulass_d(T[] a, T value)
 {
-    //printf("_arrayExpSliceMulass_d(a.length = %d, value = %Lg)\n", a.length, cast(real)value);
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
 
@@ -1235,8 +1687,8 @@ T[] _arrayExpSliceMulass_d(T[] a, T value)
             auto n = aptr + (a.length & ~7);
             if (aptr < n)
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov ESI, aptr;
                 mov EDI, n;
@@ -1265,7 +1717,46 @@ T[] _arrayExpSliceMulass_d(T[] a, T value)
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
+            if (aptr < n)
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RSI, aptr;
+                mov RDI, n;
+                movsd XMM4, value;
+                shufpd XMM4, XMM4, 0;
+
+                align 8;
+            startsseloopa:
+                movupd XMM0, [RSI];
+                movupd XMM1, [RSI+16];
+                movupd XMM2, [RSI+32];
+                movupd XMM3, [RSI+48];
+                add RSI, 64;
+                mulpd XMM0, XMM4;
+                mulpd XMM1, XMM4;
+                mulpd XMM2, XMM4;
+                mulpd XMM3, XMM4;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopa;
+
+                mov aptr, RSI;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ *= value;
 
@@ -1318,14 +1809,9 @@ unittest
  */
 
 T[] _arraySliceSliceMulass_d(T[] a, T[] b)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
-    //printf("_arraySliceSliceMulass_d()\n");
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -1337,8 +1823,8 @@ body
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov ECX, bptr; // right operand
                 mov ESI, aptr; // destination operand
@@ -1372,7 +1858,50 @@ body
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RCX, bptr; // right operand
+                mov RSI, aptr; // destination operand
+                mov RDI, n; // end comparison
+
+                align 8;
+            startsseloopb:
+                movupd XMM0, [RSI];
+                movupd XMM1, [RSI+16];
+                movupd XMM2, [RSI+32];
+                movupd XMM3, [RSI+48];
+                add RSI, 64;
+                movupd XMM4, [RCX];
+                movupd XMM5, [RCX+16];
+                movupd XMM6, [RCX+32];
+                movupd XMM7, [RCX+48];
+                add RCX, 64;
+                mulpd XMM0, XMM4;
+                mulpd XMM1, XMM5;
+                mulpd XMM2, XMM6;
+                mulpd XMM3, XMM7;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopb;
+
+                mov aptr, RSI;
+                mov bptr, RCX;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ *= *bptr++;
 
@@ -1425,14 +1954,9 @@ unittest
  */
 
 T[] _arraySliceExpDivSliceAssign_d(T[] a, T value, T[] b)
-in
 {
-    assert(a.length == b.length);
-    assert(disjoint(a, b));
-}
-body
-{
-    //printf("_arraySliceExpDivSliceAssign_d()\n");
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
@@ -1449,15 +1973,13 @@ body
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr;
                 mov ESI, aptr;
                 mov EDI, n;
                 movsd XMM4, recip;
-                //movsd XMM4, value
-                //rcpsd XMM4, XMM4
                 shufpd XMM4, XMM4, 0;
 
                 align 8;
@@ -1472,10 +1994,6 @@ body
                 mulpd XMM1, XMM4;
                 mulpd XMM2, XMM4;
                 mulpd XMM3, XMM4;
-                //divpd XMM0, XMM4;
-                //divpd XMM1, XMM4;
-                //divpd XMM2, XMM4;
-                //divpd XMM3, XMM4;
                 movupd [ESI+ 0-64], XMM0;
                 movupd [ESI+16-64], XMM1;
                 movupd [ESI+32-64], XMM2;
@@ -1488,11 +2006,51 @@ body
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr;
+                mov RSI, aptr;
+                mov RDI, n;
+                movsd XMM4, recip;
+                shufpd XMM4, XMM4, 0;
+
+                align 8;
+            startsseloop:
+                add RSI, 64;
+                movupd XMM0, [RAX];
+                movupd XMM1, [RAX+16];
+                movupd XMM2, [RAX+32];
+                movupd XMM3, [RAX+48];
+                add RAX, 64;
+                mulpd XMM0, XMM4;
+                mulpd XMM1, XMM4;
+                mulpd XMM2, XMM4;
+                mulpd XMM3, XMM4;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloop;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
     {
-        *aptr++ = *bptr++ / value;
-        //*aptr++ = *bptr++ * recip;
+        *aptr++ = *bptr++ * recip;
     }
 
     return a;
@@ -1525,7 +2083,6 @@ unittest
 
             for (int i = 0; i < dim; i++)
             {
-                //printf("[%d]: %g ?= %g / 8\n", i, c[i], a[i]);
                 if (c[i] != cast(T)(a[i] / 8))
                 {
                     printf("[%d]: %g != %g / 8\n", i, c[i], a[i]);
@@ -1545,7 +2102,6 @@ unittest
 
 T[] _arrayExpSliceDivass_d(T[] a, T value)
 {
-    //printf("_arrayExpSliceDivass_d(a.length = %d, value = %Lg)\n", a.length, cast(real)value);
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
 
@@ -1561,14 +2117,12 @@ T[] _arrayExpSliceDivass_d(T[] a, T value)
         {
             auto n = aptr + (a.length & ~7);
 
-            // Unaligned case
-            asm
+            // Array length greater than 8
+            asm pure nothrow @nogc
             {
                 mov ESI, aptr;
                 mov EDI, n;
                 movsd XMM4, recip;
-                //movsd XMM4, value
-                //rcpsd XMM4, XMM4
                 shufpd XMM4, XMM4, 0;
 
                 align 8;
@@ -1582,10 +2136,6 @@ T[] _arrayExpSliceDivass_d(T[] a, T value)
                 mulpd XMM1, XMM4;
                 mulpd XMM2, XMM4;
                 mulpd XMM3, XMM4;
-                //divpd XMM0, XMM4;
-                //divpd XMM1, XMM4;
-                //divpd XMM2, XMM4;
-                //divpd XMM3, XMM4;
                 movupd [ESI+ 0-64], XMM0;
                 movupd [ESI+16-64], XMM1;
                 movupd [ESI+32-64], XMM2;
@@ -1597,7 +2147,45 @@ T[] _arrayExpSliceDivass_d(T[] a, T value)
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
 
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RSI, aptr;
+                mov RDI, n;
+                movsd XMM4, recip;
+                shufpd XMM4, XMM4, 0;
+
+                align 8;
+            startsseloopa:
+                movupd XMM0, [RSI];
+                movupd XMM1, [RSI+16];
+                movupd XMM2, [RSI+32];
+                movupd XMM3, [RSI+48];
+                add RSI, 64;
+                mulpd XMM0, XMM4;
+                mulpd XMM1, XMM4;
+                mulpd XMM2, XMM4;
+                mulpd XMM3, XMM4;
+                movupd [RSI+ 0-64], XMM0;
+                movupd [RSI+16-64], XMM1;
+                movupd [RSI+32-64], XMM2;
+                movupd [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopa;
+
+                mov aptr, RSI;
+            }
+        }
+    }
+
+    // Handle remainder
     while (aptr < aend)
         *aptr++ *= recip;
 
@@ -1662,16 +2250,88 @@ T[] _arraySliceExpMulSliceMinass_d(T[] a, T value, T[] b)
  */
 
 T[] _arraySliceExpMulSliceAddass_d(T[] a, T value, T[] b)
-in
 {
-        assert(a.length == b.length);
-        assert(disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;
+
+    version (D_InlineAsm_X86)
+    {
+        // SSE2 version is 183% faster
+        if (sse2 && a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
+
+            asm pure nothrow @nogc
+            {
+                mov ECX, bptr;      // right operand
+                mov ESI, aptr;      // destination operand
+                mov EDI, n;         // end comparison
+                movsd XMM3, value;  // multiplier
+                shufpd XMM3, XMM3, 0;
+
+                align 8;
+            startsseloopb:
+                movupd XMM4, [ECX];
+                movupd XMM5, [ECX+16];
+                add ECX, 32; // 64;
+                movupd XMM0, [ESI];
+                movupd XMM1, [ESI+16];
+                mulpd XMM4, XMM3;
+                mulpd XMM5, XMM3;
+                add ESI, 32; // 64;
+                addpd XMM0, XMM4;
+                addpd XMM1, XMM5;
+                movupd [ESI+ 0-32], XMM0;
+                movupd [ESI+16-32], XMM1;
+                cmp ESI, EDI;
+                jb startsseloopb;
+
+                mov aptr, ESI;
+                mov bptr, ECX;
+            }
+        }
+    }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 8)
+        {
+            auto n = aptr + (a.length & ~7);
+
+            // Array length greater than 8
+            asm pure nothrow @nogc
+            {
+                mov RCX, bptr;      // right operand
+                mov RSI, aptr;      // destination operand
+                mov RDI, n;         // end comparison
+                movsd XMM3, value;  // multiplier
+                shufpd XMM3, XMM3, 0;
+
+                align 8;
+            startsseloopb:
+                movupd XMM4, [RCX];
+                movupd XMM5, [RCX+16];
+                add RCX, 32;
+                movupd XMM0, [RSI];
+                movupd XMM1, [RSI+16];
+                mulpd XMM4, XMM3;
+                mulpd XMM5, XMM3;
+                add RSI, 32;
+                addpd XMM0, XMM4;
+                addpd XMM1, XMM5;
+                movupd [RSI+ 0-32], XMM0;
+                movupd [RSI+16-32], XMM1;
+                cmp RSI, RDI;
+                jb startsseloopb;
+
+                mov aptr, RSI;
+                mov bptr, RCX;
+            }
+        }
+    }
 
     // Handle remainder
     while (aptr < aend)
@@ -1684,7 +2344,7 @@ unittest
 {
     debug(PRINTF) printf("_arraySliceExpMulSliceAddass_d unittest\n");
 
-    cpuid = 1;
+    for (cpuid = 0; cpuid < CPUID_MAX; cpuid++)
     {
         version (log) printf("    cpuid %d\n", cpuid);
 
@@ -1709,7 +2369,6 @@ unittest
 
             for (int i = 0; i < dim; i++)
             {
-                //printf("[%d]: %g ?= %g + %g * 6\n", i, c[i], b[i], a[i]);
                 if (c[i] != cast(T)(b[i] + a[i] * 6))
                 {
                     printf("[%d]: %g ?= %g + %g * 6\n", i, c[i], b[i], a[i]);

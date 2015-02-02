@@ -2,7 +2,7 @@
  * Contains SSE2 and MMX versions of certain operations for float.
  *
  * Copyright: Copyright Digital Mars 2008 - 2010.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Walter Bright, based on code originally written by Burton Radons
  */
 
@@ -16,6 +16,7 @@ module rt.arrayfloat;
 // debug=PRINTF
 
 private import core.cpuid;
+import rt.util.array;
 
 version (unittest)
 {
@@ -24,6 +25,8 @@ version (unittest)
      */
     int cpuid;
     const int CPUID_MAX = 5;
+
+nothrow:
     @property bool mmx()      { return cpuid == 1 && core.cpuid.mmx; }
     @property bool sse()      { return cpuid == 2 && core.cpuid.sse; }
     @property bool sse2()     { return cpuid == 3 && core.cpuid.sse2; }
@@ -38,12 +41,6 @@ else
 }
 
 //version = log;
-
-@trusted pure nothrow
-bool disjoint(T)(T[] a, T[] b)
-{
-    return (a.ptr + a.length <= b.ptr || b.ptr + b.length <= a.ptr);
-}
 
 alias float T;
 
@@ -72,7 +69,7 @@ private template CodeGenSliceSliceOp(string opD, string opSSE, string op3DNow)
             auto n = aptr + (b.length & ~15);
 
             // Unaligned case
-            asm
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr; // left operand
                 mov ECX, cptr; // right operand
@@ -114,7 +111,7 @@ private template CodeGenSliceSliceOp(string opD, string opSSE, string op3DNow)
         {
             auto n = aptr + (b.length & ~7);
 
-            asm
+            asm pure nothrow @nogc
             {
                 mov ESI, aptr; // destination operand
                 mov EDI, n;    // end comparison
@@ -148,6 +145,51 @@ private template CodeGenSliceSliceOp(string opD, string opSSE, string op3DNow)
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (b.length >= 16)
+        {
+            auto n = aptr + (b.length & ~15);
+
+            // Unaligned case
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr; // left operand
+                mov RCX, cptr; // right operand
+                mov RSI, aptr; // destination operand
+                mov RDI, n;    // end comparison
+
+                align 8;
+            startsseloopb:
+                movups XMM0, [RAX];
+                movups XMM1, [RAX+16];
+                movups XMM2, [RAX+32];
+                movups XMM3, [RAX+48];
+                add RAX, 64;
+                movups XMM4, [RCX];
+                movups XMM5, [RCX+16];
+                movups XMM6, [RCX+32];
+                movups XMM7, [RCX+48];
+                add RSI, 64;
+                ` ~ opSSE ~ ` XMM0, XMM4;
+                ` ~ opSSE ~ ` XMM1, XMM5;
+                ` ~ opSSE ~ ` XMM2, XMM6;
+                ` ~ opSSE ~ ` XMM3, XMM7;
+                add RCX, 64;
+                movups [RSI+ 0-64], XMM0;
+                movups [RSI+16-64], XMM1;
+                movups [RSI+32-64], XMM2;
+                movups [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopb;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+                mov cptr, RCX;
+            }
+        }
+    }
 
     // Handle remainder
     while (aptr < aend)
@@ -164,14 +206,10 @@ private template CodeGenSliceSliceOp(string opD, string opSSE, string op3DNow)
  */
 
 T[] _arraySliceSliceAddSliceAssign_f(T[] a, T[] c, T[] b)
-in
 {
-        assert(a.length == b.length && b.length == c.length);
-        assert(disjoint(a, b));
-        assert(disjoint(a, c));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+    enforceTypedArraysConformable("vector operation", a, c);
+
     mixin(CodeGenSliceSliceOp!("+", "addps", "pfadd"));
 }
 
@@ -221,14 +259,10 @@ unittest
  */
 
 T[] _arraySliceSliceMinSliceAssign_f(T[] a, T[] c, T[] b)
-in
 {
-        assert(a.length == b.length && b.length == c.length);
-        assert(disjoint(a, b));
-        assert(disjoint(a, c));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+    enforceTypedArraysConformable("vector operation", a, c);
+
     mixin(CodeGenSliceSliceOp!("-", "subps", "pfsub"));
 }
 
@@ -278,14 +312,10 @@ unittest
  */
 
 T[] _arraySliceSliceMulSliceAssign_f(T[] a, T[] c, T[] b)
-in
 {
-        assert(a.length == b.length && b.length == c.length);
-        assert(disjoint(a, b));
-        assert(disjoint(a, c));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+    enforceTypedArraysConformable("vector operation", a, c);
+
     mixin(CodeGenSliceSliceOp!("*", "mulps", "pfmul"));
 }
 
@@ -358,7 +388,7 @@ private template CodeGenExpSliceOpAssign(string opD, string opSSE, string op3DNo
                     *aptr++ ` ~ opD ~ ` value;
 
                 // process aligned slice with fast SSE operations
-                asm
+                asm pure nothrow @nogc
                 {
                     mov ESI, aabeg;
                     mov EDI, aaend;
@@ -395,7 +425,7 @@ private template CodeGenExpSliceOpAssign(string opD, string opSSE, string op3DNo
             ulong w = *cast(uint *) &value;
             ulong v = w | (w << 32L);
 
-            asm
+            asm pure nothrow @nogc
             {
                 mov ESI, dword ptr [aptr];
                 mov EDI, dword ptr [n];
@@ -421,6 +451,43 @@ private template CodeGenExpSliceOpAssign(string opD, string opSSE, string op3DNo
 
                 emms;
                 mov dword ptr [aptr], ESI;
+            }
+        }
+    }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 16)
+        {
+            auto n = aptr + (a.length & ~15);
+            if (aptr < n)
+
+            asm pure nothrow @nogc
+            {
+                mov RSI, aptr;
+                mov RDI, n;
+                movss XMM4, value;
+                shufps XMM4, XMM4, 0;
+
+                align 8;
+            startsseloopa:
+                movups XMM0, [RSI];
+                movups XMM1, [RSI+16];
+                movups XMM2, [RSI+32];
+                movups XMM3, [RSI+48];
+                add RSI, 64;
+                ` ~ opSSE ~ ` XMM0, XMM4;
+                ` ~ opSSE ~ ` XMM1, XMM4;
+                ` ~ opSSE ~ ` XMM2, XMM4;
+                ` ~ opSSE ~ ` XMM3, XMM4;
+                movups [RSI+ 0-64], XMM0;
+                movups [RSI+16-64], XMM1;
+                movups [RSI+32-64], XMM2;
+                movups [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopa;
+
+                mov aptr, RSI;
             }
         }
     }
@@ -654,7 +721,7 @@ private template CodeGenSliceExpOp(string opD, string opSSE, string op3DNow)
             auto n = aptr + (a.length & ~15);
 
             // Unaligned case
-            asm
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr;
                 mov ESI, aptr;
@@ -694,7 +761,7 @@ private template CodeGenSliceExpOp(string opD, string opSSE, string op3DNow)
             ulong w = *cast(uint *) &value;
             ulong v = w | (w << 32L);
 
-            asm
+            asm pure nothrow @nogc
             {
                 mov ESI, aptr;
                 mov EDI, n;
@@ -726,6 +793,46 @@ private template CodeGenSliceExpOp(string opD, string opSSE, string op3DNow)
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 16)
+        {
+            auto n = aptr + (a.length & ~15);
+
+            // Unaligned case
+            asm pure nothrow @nogc
+            {
+                mov RAX, bptr;
+                mov RSI, aptr;
+                mov RDI, n;
+                movss XMM4, value;
+                shufps XMM4, XMM4, 0;
+
+                align 8;
+            startsseloop:
+                add RSI, 64;
+                movups XMM0, [RAX];
+                movups XMM1, [RAX+16];
+                movups XMM2, [RAX+32];
+                movups XMM3, [RAX+48];
+                add RAX, 64;
+                ` ~ opSSE ~ ` XMM0, XMM4;
+                ` ~ opSSE ~ ` XMM1, XMM4;
+                ` ~ opSSE ~ ` XMM2, XMM4;
+                ` ~ opSSE ~ ` XMM3, XMM4;
+                movups [RSI+ 0-64], XMM0;
+                movups [RSI+16-64], XMM1;
+                movups [RSI+32-64], XMM2;
+                movups [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloop;
+
+                mov aptr, RSI;
+                mov bptr, RAX;
+            }
+        }
+    }
 
     while (aptr < aend)
         *aptr++ = *bptr++ ` ~ opD ~ ` value;
@@ -741,13 +848,9 @@ private template CodeGenSliceExpOp(string opD, string opSSE, string op3DNow)
  */
 
 T[] _arraySliceExpAddSliceAssign_f(T[] a, T value, T[] b)
-in
 {
-    assert(a.length == b.length);
-    assert(disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     mixin(CodeGenSliceExpOp!("+", "addps", "pfadd"));
 }
 
@@ -796,13 +899,9 @@ unittest
  */
 
 T[] _arraySliceExpMinSliceAssign_f(T[] a, T value, T[] b)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     mixin(CodeGenSliceExpOp!("-", "subps", "pfsub"));
 }
 
@@ -851,13 +950,9 @@ unittest
  */
 
 T[] _arraySliceExpMulSliceAssign_f(T[] a, T value, T[] b)
-in
 {
-    assert(a.length == b.length);
-    assert(disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     mixin(CodeGenSliceExpOp!("*", "mulps", "pfmul"));
 }
 
@@ -950,6 +1045,10 @@ unittest
 /* ======================================================================== */
 /* ======================================================================== */
 
+/* template for the case
+ *   a[] ?= b[]
+ * with some binary operator ?
+ */
 private template CodeGenSliceOpAssign(string opD, string opSSE, string op3DNow)
 {
     const CodeGenSliceOpAssign = `
@@ -965,7 +1064,7 @@ private template CodeGenSliceOpAssign(string opD, string opSSE, string op3DNow)
             auto n = aptr + (a.length & ~15);
 
             // Unaligned case
-            asm
+            asm pure nothrow @nogc
             {
                 mov ECX, bptr; // right operand
                 mov ESI, aptr; // destination operand
@@ -1004,7 +1103,7 @@ private template CodeGenSliceOpAssign(string opD, string opSSE, string op3DNow)
         {
             auto n = aptr + (a.length & ~7);
 
-            asm
+            asm pure nothrow @nogc
             {
                 mov ESI, dword ptr [aptr]; // destination operand
                 mov EDI, dword ptr [n];    // end comparison
@@ -1035,6 +1134,48 @@ private template CodeGenSliceOpAssign(string opD, string opSSE, string op3DNow)
             }
         }
     }
+    else version (D_InlineAsm_X86_64)
+    {
+        // All known X86_64 have SSE2
+        if (a.length >= 16)
+        {
+            auto n = aptr + (a.length & ~15);
+
+            // Unaligned case
+            asm pure nothrow @nogc
+            {
+                mov RCX, bptr; // right operand
+                mov RSI, aptr; // destination operand
+                mov RDI, n; // end comparison
+
+                align 8;
+            startsseloopb:
+                movups XMM0, [RSI];
+                movups XMM1, [RSI+16];
+                movups XMM2, [RSI+32];
+                movups XMM3, [RSI+48];
+                add RSI, 64;
+                movups XMM4, [RCX];
+                movups XMM5, [RCX+16];
+                movups XMM6, [RCX+32];
+                movups XMM7, [RCX+48];
+                add RCX, 64;
+                ` ~ opSSE ~ ` XMM0, XMM4;
+                ` ~ opSSE ~ ` XMM1, XMM5;
+                ` ~ opSSE ~ ` XMM2, XMM6;
+                ` ~ opSSE ~ ` XMM3, XMM7;
+                movups [RSI+ 0-64], XMM0;
+                movups [RSI+16-64], XMM1;
+                movups [RSI+32-64], XMM2;
+                movups [RSI+48-64], XMM3;
+                cmp RSI, RDI;
+                jb startsseloopb;
+
+                mov aptr, RSI;
+                mov bptr, RCX;
+            }
+        }
+    }
 
     while (aptr < aend)
         *aptr++ ` ~ opD ~ ` *bptr++;
@@ -1050,13 +1191,9 @@ private template CodeGenSliceOpAssign(string opD, string opSSE, string op3DNow)
  */
 
 T[] _arraySliceSliceAddass_f(T[] a, T[] b)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     mixin(CodeGenSliceOpAssign!("+=", "addps", "pfadd"));
 }
 
@@ -1106,13 +1243,9 @@ unittest
  */
 
 T[] _arraySliceSliceMinass_f(T[] a, T[] b)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     mixin(CodeGenSliceOpAssign!("-=", "subps", "pfsub"));
 }
 
@@ -1162,13 +1295,9 @@ unittest
  */
 
 T[] _arraySliceSliceMulass_f(T[] a, T[] b)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     mixin(CodeGenSliceOpAssign!("*=", "mulps", "pfmul"));
 }
 
@@ -1219,13 +1348,9 @@ unittest
  */
 
 T[] _arrayExpSliceMinSliceAssign_f(T[] a, T[] b, T value)
-in
 {
-    assert (a.length == b.length);
-    assert (disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     //printf("_arrayExpSliceMinSliceAssign_f()\n");
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
@@ -1239,7 +1364,7 @@ body
             auto n = aptr + (a.length & ~15);
 
             // Unaligned case
-            asm
+            asm pure nothrow @nogc
             {
                 mov EAX, bptr;
                 mov ESI, aptr;
@@ -1283,7 +1408,7 @@ body
             ulong w = *cast(uint *) &value;
             ulong v = w | (w << 32L);
 
-            asm
+            asm pure nothrow @nogc
             {
                 mov ESI, aptr;
                 mov EDI, n;
@@ -1377,13 +1502,9 @@ T[] _arraySliceExpMulSliceMinass_f(T[] a, T value, T[] b)
  */
 
 T[] _arraySliceExpMulSliceAddass_f(T[] a, T value, T[] b)
-in
 {
-        assert(a.length == b.length);
-        assert(disjoint(a, b));
-}
-body
-{
+    enforceTypedArraysConformable("vector operation", a, b);
+
     auto aptr = a.ptr;
     auto aend = aptr + a.length;
     auto bptr = b.ptr;

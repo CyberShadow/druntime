@@ -3,6 +3,7 @@ SRCS=\
 	\
 	src\core\atomic.d \
 	src\core\bitop.d \
+	src\core\checkedint.d \
 	src\core\cpuid.d \
 	src\core\demangle.d \
 	src\core\exception.d \
@@ -14,16 +15,21 @@ SRCS=\
 	src\core\time.d \
 	src\core\vararg.d \
 	\
+	src\core\internal\convert.d \
+	src\core\internal\hash.d \
+	src\core\internal\traits.d \
+	\
 	src\core\stdc\config.d \
 	src\core\stdc\ctype.d \
 	src\core\stdc\errno.d \
+	src\core\stdc\fenv.d \
 	src\core\stdc\math.d \
 	src\core\stdc\signal.d \
 	src\core\stdc\stdarg.d \
+	src\core\stdc\stddef.d \
+	src\core\stdc\stdint.d \
 	src\core\stdc\stdio.d \
 	src\core\stdc\stdlib.d \
-	src\core\stdc\stdint.d \
-	src\core\stdc\stddef.d \
 	src\core\stdc\string.d \
 	src\core\stdc\time.d \
 	src\core\stdc\wchar_.d \
@@ -39,6 +45,9 @@ SRCS=\
 	src\core\sys\freebsd\execinfo.d \
 	src\core\sys\freebsd\sys\event.d \
 	\
+	src\core\sys\linux\stdio.d \
+	src\core\sys\linux\tipc.d \
+	\
 	src\core\sys\posix\signal.d \
 	src\core\sys\posix\dirent.d \
 	src\core\sys\posix\sys\resource.d \
@@ -50,18 +59,28 @@ SRCS=\
 	src\core\sys\posix\sys\ioctl.d \
 	src\core\sys\posix\sys\utsname.d \
 	src\core\sys\posix\netinet\in_.d \
+	src\core\sys\posix\arpa\inet.d \
 	\
+	src\core\sys\solaris\sys\priocntl.d \
+	src\core\sys\solaris\sys\types.d \
+	src\core\sys\solaris\sys\procset.d \
+	\
+	src\core\sys\windows\com.d \
 	src\core\sys\windows\dbghelp.d \
 	src\core\sys\windows\dll.d \
 	src\core\sys\windows\stacktrace.d \
+	src\core\sys\windows\stat.d \
 	src\core\sys\windows\threadaux.d \
 	src\core\sys\windows\windows.d \
+	src\core\sys\windows\winsock2.d \
 	\
+	src\gc\bits.d \
+	src\gc\config.d \
 	src\gc\gc.d \
 	src\gc\os.d \
-	src\gc\bits.d \
-	src\gc\stats.d \
+	src\gc\pooltable.d \
 	src\gc\proxy.d \
+	src\gc\stats.d \
 	\
 	src\rt\aApply.d \
 	src\rt\aApplyR.d \
@@ -79,10 +98,12 @@ SRCS=\
 	src\rt\arrayshort.d \
 	src\rt\cast_.d \
 	src\rt\cmath2.d \
+	src\rt\config.d \
 	src\rt\cover.d \
 	src\rt\critical_.d \
 	src\rt\deh.d \
-	src\rt\deh2.d \
+	src\rt\deh_win32.d \
+	src\rt\deh_win64_posix.d \
 	src\rt\dmain2.d \
 	src\rt\invariant.d \
 	src\rt\lifetime.d \
@@ -94,8 +115,8 @@ SRCS=\
 	src\rt\obj.d \
 	src\rt\qsort.d \
 	src\rt\sections.d \
-	src\rt\sections_freebsd.d \
-	src\rt\sections_linux.d \
+	src\rt\sections_android.d \
+	src\rt\sections_elf_shared.d \
 	src\rt\sections_osx.d \
 	src\rt\sections_solaris.d \
 	src\rt\sections_win32.d \
@@ -104,11 +125,16 @@ SRCS=\
 	src\rt\tlsgc.d \
 	src\rt\trace.d \
 	\
-	src\rt\util\console.d \
-	src\rt\util\container.d \
+	src\rt\util\array.d \
 	src\rt\util\hash.d \
+	src\rt\util\random.d \
 	src\rt\util\string.d \
+	src\rt\util\typeinfo.d \
 	src\rt\util\utf.d \
+	src\rt\util\container\array.d \
+	src\rt\util\container\common.d \
+	src\rt\util\container\hashtab.d \
+	src\rt\util\container\treap.d \
 	\
 	src\rt\typeinfo\ti_AC.d \
 	src\rt\typeinfo\ti_Acdouble.d \

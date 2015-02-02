@@ -5,30 +5,30 @@
  * binary compatibility of applications.
  *
  * Using this module is not necessary in typical D code. It is mostly
- * useful when doing low-level memory management.
+ * useful when doing low-level _memory management.
  *
  * Notes_to_implementors:
  * $(UL
- * $(LI On POSIX systems, the signals SIGUSR1 and SIGUSR2 and reserved
+ * $(LI On POSIX systems, the signals SIGUSR1 and SIGUSR2 are reserved
  *   by this module for use in the garbage collector implementation.
  *   Typically, they will be used to stop and resume other threads
  *   when performing a collection, but an implementation may choose
  *   not to use this mechanism (or not stop the world at all, in the
  *   case of concurrent garbage collectors).)
  *
- * $(LI Registers, the stack, and any other memory locations added through
+ * $(LI Registers, the stack, and any other _memory locations added through
  *   the $(D GC.$(LREF addRange)) function are always scanned conservatively.
  *   This means that even if a variable is e.g. of type $(D float),
  *   it will still be scanned for possible GC pointers. And, if the
  *   word-interpreted representation of the variable matches a GC-managed
- *   memory block's address, that memory block is considered live.)
+ *   _memory block's address, that _memory block is considered live.)
  *
  * $(LI Implementations are free to scan the non-root heap in a precise
  *   manner, so that fields of types like $(D float) will not be considered
  *   relevant when scanning the heap. Thus, casting a GC pointer to an
  *   integral type (e.g. $(D size_t)) and storing it in a field of that
  *   type inside the GC heap may mean that it will not be recognized
- *   if the memory block was allocated with precise type info or with
+ *   if the _memory block was allocated with precise type info or with
  *   the $(D GC.BlkAttr.$(LREF NO_SCAN)) attribute.)
  *
  * $(LI Destructors will always be executed while other threads are
@@ -41,20 +41,20 @@
  *
  * $(LI An implementation is free to perform heap compaction and copying
  *   so long as no valid GC pointers are invalidated in the process.
- *   However, memory allocated with $(D GC.BlkAttr.$(LREF NO_MOVE)) must
+ *   However, _memory allocated with $(D GC.BlkAttr.$(LREF NO_MOVE)) must
  *   not be moved/copied.)
  *
  * $(LI Implementations must support interior pointers. That is, if the
- *   only reference to a GC-managed memory block points into the
+ *   only reference to a GC-managed _memory block points into the
  *   middle of the block rather than the beginning (for example), the
- *   GC must consider the memory block live. The exception to this
- *   rule is when a memory block is allocated with the
+ *   GC must consider the _memory block live. The exception to this
+ *   rule is when a _memory block is allocated with the
  *   $(D GC.BlkAttr.$(LREF NO_INTERIOR)) attribute; it is the user's
- *   responsibility to make sure such memory blocks have a proper pointer
+ *   responsibility to make sure such _memory blocks have a proper pointer
  *   to them when they should be considered live.)
  *
  * $(LI It is acceptable for an implementation to store bit flags into
- *   pointer values and GC-managed memory blocks, so long as such a
+ *   pointer values and GC-managed _memory blocks, so long as such a
  *   trick is not visible to the application. In practice, this means
  *   that only a stop-the-world collector can do this.)
  *
@@ -64,7 +64,7 @@
  *
  * $(LI Implementations are free to run collections at any point. It is,
  *   however, recommendable to only do so when an allocation attempt
- *   happens and there is insufficient memory available.)
+ *   happens and there is insufficient _memory available.)
  * )
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
@@ -95,11 +95,11 @@ private
     extern (C) uint gc_setAttr( void* p, uint a ) pure nothrow;
     extern (C) uint gc_clrAttr( void* p, uint a ) pure nothrow;
 
-    extern (C) void*    gc_malloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) void*    gc_calloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) BlkInfo_ gc_qalloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) void*    gc_realloc( void* p, size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz ) pure nothrow;
+    extern (C) void*    gc_malloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) void*    gc_calloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) BlkInfo_ gc_qalloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) void*    gc_realloc( void* p, size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz, const TypeInfo = null ) pure nothrow;
     extern (C) size_t   gc_reserve( size_t sz ) nothrow;
     extern (C) void     gc_free( void* p ) pure nothrow;
 
@@ -116,10 +116,11 @@ private
     extern (C) BlkInfo_ gc_query( void* p ) pure nothrow;
 
     extern (C) void gc_addRoot( in void* p ) nothrow;
-    extern (C) void gc_addRange( in void* p, size_t sz ) nothrow;
+    extern (C) void gc_addRange( in void* p, size_t sz, const TypeInfo ti = null ) nothrow;
 
     extern (C) void gc_removeRoot( in void* p ) nothrow;
     extern (C) void gc_removeRange( in void* p ) nothrow;
+    extern (C) void gc_runFinalizers( in void[] segment );
 }
 
 
@@ -219,6 +220,8 @@ struct GC
         and is only implemented for data structures at least a page in size.
         */
         NO_INTERIOR = 0b0001_0000,
+
+        STRUCTFINAL = 0b0010_0000, // the block has a finalizer for (an array of) structs
     }
 
 
@@ -324,6 +327,8 @@ struct GC
      * Params:
      *  sz = The desired allocation size in bytes.
      *  ba = A bitmask of the attributes to set on this block.
+     *  ti = TypeInfo to describe the memory. The GC might use this information
+     *       to improve scanning for pointers or to call finalizers.
      *
      * Returns:
      *  A reference to the allocated memory or null if insufficient memory
@@ -332,9 +337,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static void* malloc( size_t sz, uint ba = 0 ) pure nothrow
+    static void* malloc( size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_malloc( sz, ba );
+        return gc_malloc( sz, ba, ti );
     }
 
 
@@ -348,6 +353,8 @@ struct GC
      * Params:
      *  sz = The desired allocation size in bytes.
      *  ba = A bitmask of the attributes to set on this block.
+     *  ti = TypeInfo to describe the memory. The GC might use this information
+     *       to improve scanning for pointers or to call finalizers.
      *
      * Returns:
      *  Information regarding the allocated memory block or BlkInfo.init on
@@ -356,9 +363,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static BlkInfo qalloc( size_t sz, uint ba = 0 ) pure nothrow
+    static BlkInfo qalloc( size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_qalloc( sz, ba );
+        return gc_qalloc( sz, ba, ti );
     }
 
 
@@ -373,6 +380,8 @@ struct GC
      * Params:
      *  sz = The desired allocation size in bytes.
      *  ba = A bitmask of the attributes to set on this block.
+     *  ti = TypeInfo to describe the memory. The GC might use this information
+     *       to improve scanning for pointers or to call finalizers.
      *
      * Returns:
      *  A reference to the allocated memory or null if insufficient memory
@@ -381,9 +390,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static void* calloc( size_t sz, uint ba = 0 ) pure nothrow
+    static void* calloc( size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_calloc( sz, ba );
+        return gc_calloc( sz, ba, ti );
     }
 
 
@@ -411,6 +420,8 @@ struct GC
      *  p  = A pointer to the root of a valid memory block or to null.
      *  sz = The desired allocation size in bytes.
      *  ba = A bitmask of the attributes to set on this block.
+     *  ti = TypeInfo to describe the memory. The GC might use this information
+     *       to improve scanning for pointers or to call finalizers.
      *
      * Returns:
      *  A reference to the allocated memory on success or null if sz is
@@ -419,9 +430,22 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static void* realloc( void* p, size_t sz, uint ba = 0 ) pure nothrow
+    static void* realloc( void* p, size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_realloc( p, sz, ba );
+        return gc_realloc( p, sz, ba, ti );
+    }
+
+    /// Issue 13111
+    unittest
+    {
+        enum size1 = 1 << 11 + 1; // page in large object pool
+        enum size2 = 1 << 22 + 1; // larger than large object pool size
+
+        auto data1 = cast(ubyte*)GC.calloc(size1);
+        auto data2 = cast(ubyte*)GC.realloc(data1, size2);
+
+        BlkInfo info = query(data2);
+        assert(info.size >= size2);
     }
 
 
@@ -436,6 +460,9 @@ struct GC
      *  p  = A pointer to the root of a valid memory block or to null.
      *  mx = The minimum extension size in bytes.
      *  sz = The desired extension size in bytes.
+     *  ti = TypeInfo to describe the full memory block. The GC might use
+     *       this information to improve scanning for pointers or to
+     *       call finalizers.
      *
      * Returns:
      *  The size in bytes of the extended memory block referenced by p or zero
@@ -447,9 +474,9 @@ struct GC
      *  as an indicator of success. $(LREF capacity) should be used to
      *  retrieve actual useable slice capacity.
      */
-    static size_t extend( void* p, size_t mx, size_t sz ) pure nothrow
+    static size_t extend( void* p, size_t mx, size_t sz, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_extend( p, mx, sz );
+        return gc_extend( p, mx, sz, ti );
     }
     /// Standard extending
     unittest
@@ -684,6 +711,8 @@ struct GC
      *  p  = A pointer to a valid memory address or to null.
      *  sz = The size in bytes of the block to add. If sz is zero then the
      *       no operation will occur. If p is null then sz must be zero.
+     *  ti = TypeInfo to describe the memory. The GC might use this information
+     *       to improve scanning for pointers or to call finalizers
      *
      * Example:
      * ---
@@ -698,9 +727,9 @@ struct GC
      * // rawMemory will be recognized on collection.
      * ---
      */
-    static void addRange( in void* p, size_t sz ) nothrow /* FIXME pure */
+    static void addRange( in void* p, size_t sz, const TypeInfo ti = null ) nothrow /* FIXME pure */
     {
-        gc_addRange( p, sz );
+        gc_addRange( p, sz, ti );
     }
 
 
@@ -716,5 +745,21 @@ struct GC
     static void removeRange( in void* p ) nothrow /* FIXME pure */
     {
         gc_removeRange( p );
+    }
+
+
+    /**
+     * Runs any finalizer that is located in address range of the
+     * given code segment.  This is used before unloading shared
+     * libraries.  All matching objects which have a finalizer in this
+     * code segment are assumed to be dead, using them while or after
+     * calling this method has undefined behavior.
+     *
+     * Params:
+     *  segment = address range of a code segment.
+     */
+    static void runFinalizers( in void[] segment )
+    {
+        gc_runFinalizers( segment );
     }
 }

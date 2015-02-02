@@ -12,12 +12,12 @@
 
 module rt.sections_win64;
 
-version(Win64):
+version(CRuntime_Microsoft):
 
 // debug = PRINTF;
 debug(PRINTF) import core.stdc.stdio;
 import core.stdc.stdlib : malloc, free;
-import rt.deh2, rt.minfo;
+import rt.deh, rt.minfo;
 
 struct SectionGroup
 {
@@ -31,7 +31,7 @@ struct SectionGroup
         return dg(_sections);
     }
 
-    @property inout(ModuleInfo*)[] modules() inout
+    @property immutable(ModuleInfo*)[] modules() const
     {
         return _moduleGroup.modules;
     }
@@ -41,6 +41,7 @@ struct SectionGroup
         return _moduleGroup;
     }
 
+    version(Win64)
     @property immutable(FuncTable)[] ehTables() const
     {
         auto pbeg = cast(immutable(FuncTable)*)&_deh_beg;
@@ -69,7 +70,7 @@ void initSections()
 
 void finiSections()
 {
-    .free(_sections.modules.ptr);
+    .free(cast(void*)_sections.modules.ptr);
 }
 
 void[] initTLSRanges()
@@ -83,7 +84,7 @@ void finiTLSRanges(void[] rng)
 {
 }
 
-void scanTLSRanges(void[] rng, scope void delegate(void* pbeg, void* pend) dg)
+void scanTLSRanges(void[] rng, scope void delegate(void* pbeg, void* pend) nothrow dg) nothrow
 {
     dg(rng.ptr, rng.ptr + rng.length);
 }
@@ -97,7 +98,7 @@ extern(C)
     extern __gshared void* _minfo_end;
 }
 
-ModuleInfo*[] getModuleInfos()
+immutable(ModuleInfo*)[] getModuleInfos()
 out (result)
 {
     foreach(m; result)
@@ -105,7 +106,7 @@ out (result)
 }
 body
 {
-    auto m = (cast(ModuleInfo**)&_minfo_beg)[1 .. &_minfo_end - &_minfo_beg];
+    auto m = (cast(immutable(ModuleInfo*)*)&_minfo_beg)[1 .. &_minfo_end - &_minfo_beg];
     /* Because of alignment inserted by the linker, various null pointers
      * are there. We need to filter them out.
      */
@@ -119,14 +120,14 @@ body
         if (*p !is null) ++cnt;
     }
 
-    auto result = (cast(ModuleInfo**).malloc(cnt * size_t.sizeof))[0 .. cnt];
+    auto result = (cast(immutable(ModuleInfo)**).malloc(cnt * size_t.sizeof))[0 .. cnt];
 
     p = m.ptr;
     cnt = 0;
     for (; p < pend; ++p)
         if (*p !is null) result[cnt++] = *p;
 
-    return result;
+    return cast(immutable)result;
 }
 
 extern(C)

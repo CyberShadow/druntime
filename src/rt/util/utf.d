@@ -16,7 +16,7 @@
  *      WIKI = Phobos/StdUtf
  *
  * Copyright: Copyright Digital Mars 2003 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Walter Bright, Sean Kelly
  */
 
@@ -540,19 +540,16 @@ code point. The code is returned in character count, not in bytes.
 
 ubyte codeLength(C)(dchar c)
 {
-
     static if (C.sizeof == 1)
     {
-        return
-            c <= 0x7F ? 1
-            : c <= 0x7FF ? 2
-            : c <= 0xFFFF ? 3
-            : c <= 0x10FFFF ? 4
-            : (assert(false), 6);
-}
-
+        if (c <= 0x7F) return 1;
+        if (c <= 0x7FF) return 2;
+        if (c <= 0xFFFF) return 3;
+        if (c <= 0x10FFFF) return 4;
+        assert(false);
+    }
     else static if (C.sizeof == 2)
-{
+    {
         return c <= 0xFFFF ? 1 : 2;
     }
     else
@@ -580,7 +577,7 @@ void validate(S)(in S s)
 
 /* =================== Conversion to UTF8 ======================= */
 
-char[] toUTF8(out char[4] buf, dchar c)
+char[] toUTF8(return out char[4] buf, dchar c)
     in
     {
         assert(isValidDchar(c));
@@ -685,7 +682,7 @@ string toUTF8(in dchar[] s)
 
 /* =================== Conversion to UTF16 ======================= */
 
-wchar[] toUTF16(wchar[2] buf, dchar c)
+wchar[] toUTF16(return out wchar[2] buf, dchar c)
     in
     {
         assert(isValidDchar(c));
@@ -899,4 +896,8 @@ unittest
     assert(c == "he\U000BAAAAllo");
     w = toUTF16(d);
     assert(w == "he\U000BAAAAllo");
+
+    wchar[2] buf;
+    auto ret = toUTF16(buf, '\U000BAAAA');
+    assert(ret == "\U000BAAAA");
 }

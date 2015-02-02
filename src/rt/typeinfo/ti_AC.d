@@ -2,7 +2,7 @@
  * TypeInfo support code.
  *
  * Copyright: Copyright Digital Mars 2004 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Walter Bright
  */
 
@@ -15,6 +15,12 @@ module rt.typeinfo.ti_AC;
 
 // Object[]
 
+/*
+NOTE: It is sometimes used for arrays of
+classes or (incorrectly) interfaces.
+But naked `TypeInfo_Array` is mostly used.
+See @@@BUG12303@@@.
+*/
 class TypeInfo_AC : TypeInfo_Array
 {
     override string toString() const { return TypeInfo.toString(); }

@@ -10,14 +10,14 @@ extern (C)
 
         struct utsname
         {
-            char sysname[utsNameLength];
-            char nodename[utsNameLength];
-            char release[utsNameLength];
+            char[utsNameLength] sysname;
+            char[utsNameLength] nodename;
+            char[utsNameLength] release;
             // The field name is version but version is a keyword in D.
-            char update[utsNameLength];
-            char machine[utsNameLength];
+            char[utsNameLength] update;
+            char[utsNameLength] machine;
 
-            char __domainname[utsNameLength];
+            char[utsNameLength] __domainname;
         }
 
         int uname(utsname* __name);
@@ -28,12 +28,12 @@ extern (C)
 
         struct utsname
         {
-            char sysname[utsNameLength];
-            char nodename[utsNameLength];
-            char release[utsNameLength];
+            char[utsNameLength] sysname;
+            char[utsNameLength] nodename;
+            char[utsNameLength] release;
             // The field name is version but version is a keyword in D.
-            char update[utsNameLength];
-            char machine[utsNameLength];
+            char[utsNameLength] update;
+            char[utsNameLength] machine;
         }
 
         int uname(utsname* __name);
@@ -44,14 +44,31 @@ extern (C)
 
         struct utsname
         {
-            char sysname[utsNameLength];
-            char nodename[utsNameLength];
-            char release[utsNameLength];
+            char[utsNameLength] sysname;
+            char[utsNameLength] nodename;
+            char[utsNameLength] release;
             // The field name is version but version is a keyword in D.
-            char update[utsNameLength];
-            char machine[utsNameLength];
+            char[utsNameLength] update;
+            char[utsNameLength] machine;
         }
 
         int uname(utsname* __name);
+    }
+    else version(Android)
+    {
+        private enum SYS_NMLN = 65;
+
+        struct utsname
+        {
+            char[SYS_NMLN] sysname;
+            char[SYS_NMLN] nodename;
+            char[SYS_NMLN] release;
+            // The field name is version but version is a keyword in D.
+            char[SYS_NMLN] _version;
+            char[SYS_NMLN] machine;
+            char[SYS_NMLN] domainname;
+        }
+
+        int uname(utsname*);
     }
 }

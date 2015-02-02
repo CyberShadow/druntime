@@ -2,7 +2,7 @@
  * D header file for POSIX.
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Sean Kelly, Alex Rønne Petersen
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
  */
@@ -18,6 +18,8 @@ private import core.sys.posix.config;
 
 version (Posix):
 extern (C):
+nothrow:
+@nogc:
 
 //
 // XOpen (XSI)
@@ -57,6 +59,13 @@ version( linux )
         enum RTLD_GLOBAL    = 0x0004;
         enum RTLD_LOCAL     = 0;
     }
+    else version (MIPS64)
+    {
+        enum RTLD_LAZY      = 0x0001;
+        enum RTLD_NOW       = 0x0002;
+        enum RTLD_GLOBAL    = 0x0004;
+        enum RTLD_LOCAL     = 0;
+    }
     else version (PPC)
     {
         enum RTLD_LAZY      = 0x00001;
@@ -65,6 +74,20 @@ version( linux )
         enum RTLD_LOCAL     = 0;
     }
     else version (PPC64)
+    {
+        enum RTLD_LAZY      = 0x00001;
+        enum RTLD_NOW       = 0x00002;
+        enum RTLD_GLOBAL    = 0x00100;
+        enum RTLD_LOCAL     = 0;
+    }
+    else version (ARM)
+    {
+        enum RTLD_LAZY      = 0x00001;
+        enum RTLD_NOW       = 0x00002;
+        enum RTLD_GLOBAL    = 0x00100;
+        enum RTLD_LOCAL     = 0;
+    }
+    else version (AArch64)
     {
         enum RTLD_LAZY      = 0x00001;
         enum RTLD_NOW       = 0x00002;
@@ -126,6 +149,51 @@ else version( FreeBSD )
     void* dlopen(in char*, int);
     void* dlsym(void*, in char*);
     int   dladdr(const(void)* addr, Dl_info* info);
+
+    struct Dl_info
+    {
+        const(char)* dli_fname;
+        void*        dli_fbase;
+        const(char)* dli_sname;
+        void*        dli_saddr;
+    }
+}
+else version( Solaris )
+{
+    enum RTLD_LAZY      = 1;
+    enum RTLD_NOW       = 2;
+    enum RTLD_GLOBAL    = 0x100;
+    enum RTLD_LOCAL     = 0;
+
+    int   dlclose(void*);
+    char* dlerror();
+    void* dlopen(in char*, int);
+    void* dlsym(void*, in char*);
+    int   dladdr(const(void)* addr, Dl_info* info);
+
+    struct Dl_info
+    {
+        const(char)* dli_fname;
+        void*        dli_fbase;
+        const(char)* dli_sname;
+        void*        dli_saddr;
+    }
+}
+else version( Android )
+{
+    enum
+    {
+        RTLD_NOW    = 0,
+        RTLD_LAZY   = 1,
+        RTLD_LOCAL  = 0,
+        RTLD_GLOBAL = 2
+    }
+
+    int          dladdr(in void*, Dl_info*);
+    int          dlclose(void*);
+    const(char)* dlerror();
+    void*        dlopen(in char*, int);
+    void*        dlsym(void*, in char*);
 
     struct Dl_info
     {

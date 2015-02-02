@@ -2,7 +2,7 @@
  * D header file for POSIX.
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Sean Kelly, Alex Rønne Petersen
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
  */
@@ -19,6 +19,9 @@ public import core.sys.posix.sys.types; // for pid_t
 
 version (Posix):
 extern (C):
+
+nothrow:
+@nogc:
 
 //
 // Required
@@ -145,38 +148,8 @@ version( linux )
         tcflag_t   c_lflag;
         cc_t       c_line;
         cc_t[NCCS] c_cc;
-    }
-
-    struct termios2
-    {
-        tcflag_t   c_iflag;
-        tcflag_t   c_oflag;
-        tcflag_t   c_cflag;
-        tcflag_t   c_lflag;
-        cc_t       c_line;
-        cc_t[NCCS] c_cc;
         speed_t    c_ispeed;
         speed_t    c_ospeed;
-    }
-
-    struct winsize
-    {
-        ushort ws_row;
-        ushort ws_col;
-        ushort ws_xpixel;
-        ushort ws_ypixel;
-    }
-
-    enum NCC = 8;
-
-    struct termio
-    {
-        ushort c_iflag;
-        ushort c_oflag;
-        ushort c_cflag;
-        ushort c_lflag;
-        ubyte c_line;
-        ubyte[NCC] c_cc;
     }
 
     enum VEOF       = 4;

@@ -59,6 +59,7 @@ else
  */
 class Semaphore
 {
+nothrow:
     ////////////////////////////////////////////////////////////////////////////
     // Initialization
     ////////////////////////////////////////////////////////////////////////////
@@ -71,7 +72,7 @@ class Semaphore
      *  count = The initial count for the semaphore.
      *
      * Throws:
-     *  SyncException on error.
+     *  SyncError on error.
      */
     this( uint count = 0 )
     {
@@ -79,19 +80,19 @@ class Semaphore
         {
             m_hndl = CreateSemaphoreA( null, count, int.max, null );
             if( m_hndl == m_hndl.init )
-                throw new SyncException( "Unable to create semaphore" );
+                throw new SyncError( "Unable to create semaphore" );
         }
         else version( OSX )
         {
             auto rc = semaphore_create( mach_task_self(), &m_hndl, SYNC_POLICY_FIFO, count );
             if( rc )
-                throw new SyncException( "Unable to create semaphore" );
+                throw new SyncError( "Unable to create semaphore" );
         }
         else version( Posix )
         {
             int rc = sem_init( &m_hndl, 0, count );
             if( rc )
-                throw new SyncException( "Unable to create semaphore" );
+                throw new SyncError( "Unable to create semaphore" );
         }
     }
 
@@ -126,7 +127,7 @@ class Semaphore
      * the count by one and return.
      *
      * Throws:
-     *  SyncException on error.
+     *  SyncError on error.
      */
     void wait()
     {
@@ -134,7 +135,7 @@ class Semaphore
         {
             DWORD rc = WaitForSingleObject( m_hndl, INFINITE );
             if( rc != WAIT_OBJECT_0 )
-                throw new SyncException( "Unable to wait for semaphore" );
+                throw new SyncError( "Unable to wait for semaphore" );
         }
         else version( OSX )
         {
@@ -145,7 +146,7 @@ class Semaphore
                     return;
                 if( rc == KERN_ABORTED && errno == EINTR )
                     continue;
-                throw new SyncException( "Unable to wait for semaphore" );
+                throw new SyncError( "Unable to wait for semaphore" );
             }
         }
         else version( Posix )
@@ -155,7 +156,7 @@ class Semaphore
                 if( !sem_wait( &m_hndl ) )
                     return;
                 if( errno != EINTR )
-                    throw new SyncException( "Unable to wait for semaphore" );
+                    throw new SyncError( "Unable to wait for semaphore" );
             }
         }
     }
@@ -171,18 +172,18 @@ class Semaphore
      *  period = The time to wait.
      *
      * In:
-     *  val must be non-negative.
+     *  period must be non-negative.
      *
      * Throws:
-     *  SyncException on error.
+     *  SyncError on error.
      *
      * Returns:
      *  true if notified before the timeout and false if not.
      */
-    bool wait( Duration val )
+    bool wait( Duration period )
     in
     {
-        assert( !val.isNegative );
+        assert( !period.isNegative );
     }
     body
     {
@@ -190,7 +191,7 @@ class Semaphore
         {
             auto maxWaitMillis = dur!("msecs")( uint.max - 1 );
 
-            while( val > maxWaitMillis )
+            while( period > maxWaitMillis )
             {
                 auto rc = WaitForSingleObject( m_hndl, cast(uint)
                                                        maxWaitMillis.total!"msecs" );
@@ -199,20 +200,20 @@ class Semaphore
                 case WAIT_OBJECT_0:
                     return true;
                 case WAIT_TIMEOUT:
-                    val -= maxWaitMillis;
+                    period -= maxWaitMillis;
                     continue;
                 default:
-                    throw new SyncException( "Unable to wait for semaphore" );
+                    throw new SyncError( "Unable to wait for semaphore" );
                 }
             }
-            switch( WaitForSingleObject( m_hndl, cast(uint) val.total!"msecs" ) )
+            switch( WaitForSingleObject( m_hndl, cast(uint) period.total!"msecs" ) )
             {
             case WAIT_OBJECT_0:
                 return true;
             case WAIT_TIMEOUT:
                 return false;
             default:
-                throw new SyncException( "Unable to wait for semaphore" );
+                throw new SyncError( "Unable to wait for semaphore" );
             }
         }
         else version( OSX )
@@ -220,16 +221,13 @@ class Semaphore
             mach_timespec_t t = void;
             (cast(byte*) &t)[0 .. t.sizeof] = 0;
 
-            if( val.total!"seconds" > t.tv_sec.max )
+            if( period.total!"seconds" > t.tv_sec.max )
             {
                 t.tv_sec  = t.tv_sec.max;
-                t.tv_nsec = cast(typeof(t.tv_nsec)) val.fracSec.nsecs;
+                t.tv_nsec = cast(typeof(t.tv_nsec)) period.split!("seconds", "nsecs")().nsecs;
             }
             else
-            {
-                t.tv_sec  = cast(typeof(t.tv_sec)) val.total!"seconds";
-                t.tv_nsec = cast(typeof(t.tv_nsec)) val.fracSec.nsecs;
-            }
+                period.split!("seconds", "nsecs")(t.tv_sec, t.tv_nsec);
             while( true )
             {
                 auto rc = semaphore_timedwait( m_hndl, t );
@@ -238,13 +236,13 @@ class Semaphore
                 if( rc == KERN_OPERATION_TIMED_OUT )
                     return false;
                 if( rc != KERN_ABORTED || errno != EINTR )
-                    throw new SyncException( "Unable to wait for semaphore" );
+                    throw new SyncError( "Unable to wait for semaphore" );
             }
         }
         else version( Posix )
         {
             timespec t = void;
-            mktspec( t, val );
+            mktspec( t, period );
 
             while( true )
             {
@@ -253,7 +251,7 @@ class Semaphore
                 if( errno == ETIMEDOUT )
                     return false;
                 if( errno != EINTR )
-                    throw new SyncException( "Unable to wait for semaphore" );
+                    throw new SyncError( "Unable to wait for semaphore" );
             }
         }
     }
@@ -264,26 +262,26 @@ class Semaphore
      * waiter, if there are any in the queue.
      *
      * Throws:
-     *  SyncException on error.
+     *  SyncError on error.
      */
     void notify()
     {
         version( Windows )
         {
             if( !ReleaseSemaphore( m_hndl, 1, null ) )
-                throw new SyncException( "Unable to notify semaphore" );
+                throw new SyncError( "Unable to notify semaphore" );
         }
         else version( OSX )
         {
             auto rc = semaphore_signal( m_hndl );
             if( rc )
-                throw new SyncException( "Unable to notify semaphore" );
+                throw new SyncError( "Unable to notify semaphore" );
         }
         else version( Posix )
         {
             int rc = sem_post( &m_hndl );
             if( rc )
-                throw new SyncException( "Unable to notify semaphore" );
+                throw new SyncError( "Unable to notify semaphore" );
         }
     }
 
@@ -293,7 +291,7 @@ class Semaphore
      * decrement the count by one and return true.
      *
      * Throws:
-     *  SyncException on error.
+     *  SyncError on error.
      *
      * Returns:
      *  true if the count was above zero and false if not.
@@ -309,7 +307,7 @@ class Semaphore
             case WAIT_TIMEOUT:
                 return false;
             default:
-                throw new SyncException( "Unable to wait for semaphore" );
+                throw new SyncError( "Unable to wait for semaphore" );
             }
         }
         else version( OSX )
@@ -325,7 +323,7 @@ class Semaphore
                 if( errno == EAGAIN )
                     return false;
                 if( errno != EINTR )
-                    throw new SyncException( "Unable to wait for semaphore" );
+                    throw new SyncError( "Unable to wait for semaphore" );
             }
         }
     }
@@ -354,158 +352,89 @@ private:
 
 version( unittest )
 {
-    private import core.thread;
-
+    import core.thread, core.atomic;
 
     void testWait()
     {
-        auto semaphore    = new Semaphore;
-        int  numToProduce = 10;
-        bool allProduced  = false;
-        auto synProduced  = new Object;
-        int  numConsumed  = 0;
-        auto synConsumed  = new Object;
-        int  numConsumers = 10;
-        int  numComplete  = 0;
-        auto synComplete  = new Object;
+        auto semaphore = new Semaphore;
+        shared bool stopConsumption = false;
+        immutable numToProduce = 20;
+        immutable numConsumers = 10;
+        shared size_t numConsumed;
+        shared size_t numComplete;
 
         void consumer()
         {
-            while( true )
+            while (true)
             {
                 semaphore.wait();
 
-                synchronized( synProduced )
-                {
-                    if( allProduced )
-                        break;
-                }
-
-                synchronized( synConsumed )
-                {
-                    ++numConsumed;
-                }
+                if (atomicLoad(stopConsumption))
+                    break;
+                atomicOp!"+="(numConsumed, 1);
             }
-
-            synchronized( synComplete )
-            {
-                ++numComplete;
-            }
+            atomicOp!"+="(numComplete, 1);
         }
 
         void producer()
         {
-            assert( !semaphore.tryWait() );
+            assert(!semaphore.tryWait());
 
-            for( int i = 0; i < numToProduce; ++i )
-            {
+            foreach (_; 0 .. numToProduce)
                 semaphore.notify();
-                Thread.yield();
-            }
-            Thread.sleep( dur!"seconds"(1) );
-            synchronized( synProduced )
-            {
-                allProduced = true;
-            }
 
-            for( int i = 0; i < numConsumers; ++i )
-            {
+            // wait until all items are consumed
+            while (atomicLoad(numConsumed) != numToProduce)
+                Thread.yield();
+
+            // mark consumption as finished
+            atomicStore(stopConsumption, true);
+
+            // wake all consumers
+            foreach (_; 0 .. numConsumers)
                 semaphore.notify();
+
+            // wait until all consumers completed
+            while (atomicLoad(numComplete) != numConsumers)
                 Thread.yield();
-            }
 
-            version (FreeBSD) enum factor = 500_000;
-            else enum factor = 10_000;
-
-            for( int i = numConsumers * factor; i > 0; --i )
-            {
-                synchronized( synComplete )
-                {
-                    if( numComplete == numConsumers )
-                        break;
-                }
-                Thread.yield();
-            }
-
-            {
-                bool cond;
-                synchronized( synComplete )
-                {
-                    cond = numComplete == numConsumers;
-                }
-                assert(cond);
-            }
-
-            {
-                bool cond;
-                synchronized( synConsumed )
-                {
-                    cond = numConsumed == numToProduce;
-                }
-                assert(cond);
-            }
-
-            assert( !semaphore.tryWait() );
+            assert(!semaphore.tryWait());
             semaphore.notify();
-            assert( semaphore.tryWait() );
-            assert( !semaphore.tryWait() );
+            assert(semaphore.tryWait());
+            assert(!semaphore.tryWait());
         }
 
         auto group = new ThreadGroup;
 
         for( int i = 0; i < numConsumers; ++i )
-            group.create( &consumer );
-        group.create( &producer );
+            group.create(&consumer);
+        group.create(&producer);
         group.joinAll();
     }
 
 
     void testWaitTimeout()
     {
-        auto synReady   = new Object;
-        auto semReady   = new Semaphore;
-        bool alertedOne = true;
-        bool alertedTwo = true;
-        int  numReady   = 0;
+        auto sem = new Semaphore;
+        shared bool semReady;
+        bool alertedOne, alertedTwo;
 
         void waiter()
         {
-            synchronized( synReady )
-            {
-                numReady++;
-            }
-            while( true )
-            {
-                synchronized( synReady )
-                {
-                    if( numReady > 1 )
-                        break;
-                }
+            while (!atomicLoad(semReady))
                 Thread.yield();
-            }
-            alertedOne = semReady.wait( dur!"msecs"(100) );
-            alertedTwo = semReady.wait( dur!"msecs"(100) );
+            alertedOne = sem.wait(dur!"msecs"(1));
+            alertedTwo = sem.wait(dur!"msecs"(1));
+            assert(alertedOne && !alertedTwo);
         }
 
-        auto thread = new Thread( &waiter );
+        auto thread = new Thread(&waiter);
         thread.start();
 
-        while( true )
-        {
-            synchronized( synReady )
-            {
-                if( numReady )
-                {
-                    numReady++;
-                    break;
-                }
-            }
-            Thread.yield();
-        }
-        Thread.yield();
-        semReady.notify();
+        sem.notify();
+        atomicStore(semReady, true);
         thread.join();
-        assert( numReady == 2 && alertedOne && !alertedTwo );
+        assert(alertedOne && !alertedTwo);
     }
 
 

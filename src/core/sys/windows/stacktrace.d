@@ -1,17 +1,14 @@
 /**
  * ...
  *
- * Copyright: Copyright Benjamin Thaut 2010 - 2011.
- * License:   $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
+ * Copyright: Copyright Benjamin Thaut 2010 - 2013.
+ * License: Distributed under the
+ *      $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost Software License 1.0).
+ *    (See accompanying file LICENSE)
  * Authors:   Benjamin Thaut, Sean Kelly
  * Source:    $(DRUNTIMESRC core/sys/windows/_stacktrace.d)
  */
 
-/*          Copyright Benjamin Thaut 2010 - 2012.
- * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE or copy at
- *          http://www.boost.org/LICENSE_1_0.txt)
- */
 module core.sys.windows.stacktrace;
 version(Windows):
 
@@ -29,7 +26,9 @@ debug(PRINTF) import core.stdc.stdio;
 extern(Windows) void RtlCaptureContext(CONTEXT* ContextRecord);
 extern(Windows) DWORD GetEnvironmentVariableA(LPCSTR lpName, LPSTR pBuffer, DWORD nSize);
 
+extern(Windows) alias USHORT function(ULONG FramesToSkip, ULONG FramesToCapture, PVOID *BackTrace, PULONG BackTraceHash) RtlCaptureStackBackTraceFunc;
 
+private __gshared RtlCaptureStackBackTraceFunc RtlCaptureStackBackTrace;
 private __gshared immutable bool initialized;
 
 
@@ -47,10 +46,10 @@ public:
         if(context is null)
         {
             version(Win64)
-                static enum INTERNALFRAMES = 4;
+                static enum INTERNALFRAMES = 3;
             else
                 static enum INTERNALFRAMES = 2;
-                
+
             skip += INTERNALFRAMES; //skip the stack frames within the StackTrace class
         }
         else
@@ -60,7 +59,7 @@ public:
                 static enum INTERNALFRAMES = 1;
             else
                 static enum INTERNALFRAMES = 1;
-                
+
             skip += INTERNALFRAMES;
         }
         if( initialized )
@@ -109,7 +108,7 @@ public:
      */
     static ulong[] trace(size_t skip = 0, CONTEXT* context = null)
     {
-        synchronized( StackTrace.classinfo )
+        synchronized( typeid(StackTrace) )
         {
             return traceNoSync(skip, context);
         }
@@ -124,7 +123,7 @@ public:
      */
     static char[][] resolve(const(ulong)[] addresses)
     {
-        synchronized( StackTrace.classinfo )
+        synchronized( typeid(StackTrace) )
         {
             return resolveNoSync(addresses);
         }
@@ -139,6 +138,32 @@ private:
         auto dbghelp  = DbgHelp.get();
         if(dbghelp is null)
             return []; // dbghelp.dll not available
+
+        if(RtlCaptureStackBackTrace !is null && context is null)
+        {
+            size_t[63] buffer = void; // On windows xp the sum of "frames to skip" and "frames to capture" can't be greater then 63
+            auto backtraceLength = RtlCaptureStackBackTrace(cast(ULONG)skip, cast(ULONG)(buffer.length - skip), cast(void**)buffer.ptr, null);
+
+            // If we get a backtrace and it does not have the maximum length use it.
+            // Otherwise rely on tracing through StackWalk64 which is slower but works when no frame pointers are available.
+            if(backtraceLength > 1 && backtraceLength < buffer.length - skip)
+            {
+                debug(PRINTF) printf("Using result from RtlCaptureStackBackTrace\n");
+                version(Win64)
+                {
+                    return buffer[0..backtraceLength].dup;
+                }
+                else
+                {
+                    auto result = new ulong[backtraceLength];
+                    foreach(i, ref e; result)
+                    {
+                        e = buffer[i];
+                    }
+                    return result;
+                }
+            }
+        }
 
         HANDLE       hThread  = GetCurrentThread();
         HANDLE       hProcess = GetCurrentProcess();
@@ -158,7 +183,7 @@ private:
         STACKFRAME64 stackframe;
         with (stackframe)
         {
-            version(X86) 
+            version(X86)
             {
                 enum Flat = ADDRESS_MODE.AddrModeFlat;
                 AddrPC.Offset    = ctxt.Eip;
@@ -186,9 +211,9 @@ private:
 
         ulong[] result;
         size_t frameNum = 0;
-        
+
         // do ... while so that we don't skip the first stackframe
-        do 
+        do
         {
             if( stackframe.AddrPC.Offset == stackframe.AddrReturn.Offset )
             {
@@ -258,7 +283,7 @@ private:
         char[2+2*size_t.sizeof+1] buf=void;
 
         immutable len = snprintf(buf.ptr, buf.length, "0x%p", pc);
-        len < buf.length || assert(0);
+        cast(uint)len < buf.length || assert(0);
         return buf[0 .. len].dup;
     }
 
@@ -290,7 +315,7 @@ private:
         res ~= fileName[0 .. strlen(fileName)];
         res ~= "(";
         immutable len = snprintf(buf.ptr, buf.length, "%u", lineNum);
-        len < buf.length || assert(0);
+        cast(uint)len < buf.length || assert(0);
         res ~= buf[0 .. len];
         res ~= ")";
         return res;
@@ -356,7 +381,18 @@ shared static this()
     if( dbghelp is null )
         return; // dbghelp.dll not available
 
-    debug(PRINTF) 
+    auto kernel32Handle = LoadLibraryA( "kernel32.dll" );
+    if(kernel32Handle !is null)
+    {
+        RtlCaptureStackBackTrace = cast(RtlCaptureStackBackTraceFunc) GetProcAddress(kernel32Handle, "RtlCaptureStackBackTrace");
+        debug(PRINTF)
+        {
+            if(RtlCaptureStackBackTrace !is null)
+                printf("Found RtlCaptureStackBackTrace\n");
+        }
+    }
+
+    debug(PRINTF)
     {
         API_VERSION* dbghelpVersion = dbghelp.ImagehlpApiVersion();
         printf("DbgHelp Version %d.%d.%d\n", dbghelpVersion.MajorVersion, dbghelpVersion.MinorVersion, dbghelpVersion.Revision);

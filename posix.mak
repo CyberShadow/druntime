@@ -5,40 +5,55 @@
 
 QUIET:=@
 
-OS:=
-uname_S:=$(shell uname -s)
-ifeq (Darwin,$(uname_S))
-	OS:=osx
-endif
-ifeq (Linux,$(uname_S))
-	OS:=linux
-endif
-ifeq (FreeBSD,$(uname_S))
-	OS:=freebsd
-endif
-ifeq (OpenBSD,$(uname_S))
-	OS:=openbsd
-endif
-ifeq (Solaris,$(uname_S))
-	OS:=solaris
-endif
-ifeq (SunOS,$(uname_S))
-	OS:=solaris
-endif
 ifeq (,$(OS))
-	$(error Unrecognized or unsupported OS for uname: $(uname_S))
+  uname_S:=$(shell uname -s)
+  ifeq (Darwin,$(uname_S))
+    OS:=osx
+  endif
+  ifeq (Linux,$(uname_S))
+    OS:=linux
+  endif
+  ifeq (FreeBSD,$(uname_S))
+    OS:=freebsd
+  endif
+  ifeq (OpenBSD,$(uname_S))
+    OS:=openbsd
+  endif
+  ifeq (Solaris,$(uname_S))
+    OS:=solaris
+  endif
+  ifeq (SunOS,$(uname_S))
+    OS:=solaris
+  endif
+  ifeq (,$(OS))
+    $(error Unrecognized or unsupported OS for uname: $(uname_S))
+  endif
 endif
 
-DMD?=dmd
+ifeq (,$(MODEL))
+  ifeq ($(OS),solaris)
+    uname_M:=$(shell isainfo -n)
+  else
+    uname_M:=$(shell uname -m)
+  endif
+  ifneq (,$(findstring $(uname_M),x86_64 amd64))
+    MODEL:=64
+  endif
+  ifneq (,$(findstring $(uname_M),i386 i586 i686))
+    MODEL:=32
+  endif
+  ifeq (,$(MODEL))
+    $(error Cannot figure 32/64 model from uname -m: $(uname_M))
+  endif
+endif
+
+DMD=../dmd/src/dmd
 INSTALL_DIR=../install
 
 DOCDIR=doc
 IMPDIR=import
 
-MODEL:=default
-ifneq (default,$(MODEL))
-	MODEL_FLAG:=-m$(MODEL)
-endif
+MODEL_FLAG:=-m$(MODEL)
 override PIC:=$(if $(PIC),-fPIC,)
 
 ifeq (osx,$(OS))
@@ -49,16 +64,13 @@ else
 	DOTLIB:=.a
 endif
 
-DFLAGS=$(MODEL_FLAG) -O -release -inline -w -Isrc -Iimport $(PIC) -g -gs
-UDFLAGS=$(MODEL_FLAG) -O -release -w -Isrc -Iimport $(PIC)
+DFLAGS=$(MODEL_FLAG) -O -release -dip25 -inline -w -Isrc -Iimport $(PIC) -g -gs
+UDFLAGS=$(MODEL_FLAG) -O -release -dip25 -w -Isrc -Iimport $(PIC)
 DDOCFLAGS=-c -w -o- -Isrc -Iimport -version=CoreDdoc
 
 CFLAGS=$(MODEL_FLAG) -O $(PIC)
-
-ifeq (osx,$(OS))
-    ASMFLAGS =
-else
-    ASMFLAGS = -Wa,--noexecstack
+ifeq (solaris,$(OS))
+    CFLAGS+=-D_REENTRANT  # for thread-safe errno
 endif
 
 OBJDIR=obj/$(MODEL)
@@ -90,14 +102,19 @@ SRCS:=$(subst \,/,$(SRCS))
 # NOTE: a pre-compiled minit.obj has been provided in dmd for Win32	 and
 #       minit.asm is not used by dmd for Linux
 
-OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/threadasm.o
+OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/bss_section.o $(OBJDIR)/threadasm.o
+
+# build with shared library support
+SHARED=$(if $(findstring $(OS),linux freebsd),1,)
+
+LINKDL=$(if $(findstring $(OS),linux),-L-ldl,)
 
 ######################## All of'em ##############################
 
-ifeq (linux,$(OS))
-target : import copy dll $(DRUNTIME) doc
+ifneq (,$(SHARED))
+target : import copy dll $(DRUNTIME)
 else
-target : import copy $(DRUNTIME) doc
+target : import copy $(DRUNTIME)
 endif
 
 ######################## Doc .html file generation ##############################
@@ -105,16 +122,13 @@ endif
 doc: $(DOCS)
 
 $(DOCDIR)/object.html : src/object_.d
-	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $<
-
-$(DOCDIR)/core_%.html : src/core/%.di
-	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $<
+	$(DMD) $(DDOCFLAGS) -Df$@ project.ddoc $(DOCFMT) $<
 
 $(DOCDIR)/core_%.html : src/core/%.d
-	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $<
+	$(DMD) $(DDOCFLAGS) -Df$@ project.ddoc $(DOCFMT) $<
 
 $(DOCDIR)/core_sync_%.html : src/core/sync/%.d
-	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $<
+	$(DMD) $(DDOCFLAGS) -Df$@ project.ddoc $(DOCFMT) $<
 
 ######################## Header .di file generation ##############################
 
@@ -148,15 +162,16 @@ $(OBJDIR)/errno_c.o : src/core/stdc/errno.c
 
 $(OBJDIR)/threadasm.o : src/core/threadasm.S
 	@mkdir -p $(OBJDIR)
-	$(CC) $(ASMFLAGS) -c $(CFLAGS) $< -o$@
+	$(CC) -c $(CFLAGS) $< -o$@
 
 ######################## Create a shared library ##############################
 
-dll: override PIC:=-fPIC
+$(DRUNTIMESO) $(DRUNTIMESOLIB) dll: override PIC:=-fPIC
+$(DRUNTIMESO) $(DRUNTIMESOLIB) dll: DFLAGS+=-version=Shared
 dll: $(DRUNTIMESOLIB)
 
 $(DRUNTIMESO): $(OBJS) $(SRCS)
-	$(DMD) -shared -debuglib= -defaultlib= -of$(DRUNTIMESO) $(DFLAGS) $(SRCS) $(OBJS)
+	$(DMD) -shared -debuglib= -defaultlib= -of$(DRUNTIMESO) $(DFLAGS) $(SRCS) $(OBJS) $(LINKDL)
 
 $(DRUNTIMESOLIB): $(OBJS) $(SRCS)
 	$(DMD) -c -fPIC -of$(DRUNTIMESOOBJ) $(DFLAGS) $(SRCS)
@@ -168,8 +183,13 @@ $(DRUNTIME): $(OBJS) $(SRCS)
 	$(DMD) -lib -of$(DRUNTIME) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
 UT_MODULES:=$(patsubst src/%.d,$(OBJDIR)/%,$(SRCS))
+HAS_ADDITIONAL_TESTS:=$(shell test -d test && echo 1)
+ifeq ($(HAS_ADDITIONAL_TESTS),1)
+	ADDITIONAL_TESTS:=test/init_fini test/exceptions
+	ADDITIONAL_TESTS+=$(if $(SHARED),test/shared,)
+endif
 
-unittest : $(UT_MODULES)
+unittest : $(UT_MODULES) $(addsuffix /.run,$(ADDITIONAL_TESTS))
 	@echo done
 
 ifeq ($(OS),freebsd)
@@ -181,21 +201,22 @@ endif
 $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 	@echo $@ - disabled
 
-ifneq (linux,$(OS))
+ifeq (,$(SHARED))
 
 $(OBJDIR)/test_runner: $(OBJS) $(SRCS) src/test_runner.d
-	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ src/test_runner.d $(SRCS) $(OBJS) -debuglib= -defaultlib=
+	$(DMD) $(UDFLAGS) -unittest -of$@ src/test_runner.d $(SRCS) $(OBJS) -debuglib= -defaultlib=
 
 else
 
 UT_DRUNTIME:=$(OBJDIR)/lib$(DRUNTIME_BASE)-ut$(DOTDLL)
 
 $(UT_DRUNTIME): override PIC:=-fPIC
+$(UT_DRUNTIME): UDFLAGS+=-version=Shared
 $(UT_DRUNTIME): $(OBJS) $(SRCS)
-	$(DMD) $(UDFLAGS) -shared -version=druntime_unittest -unittest -of$@ $(SRCS) $(OBJS) -debuglib= -defaultlib=
+	$(DMD) $(UDFLAGS) -shared -unittest -of$@ $(SRCS) $(OBJS) $(LINKDL) -debuglib= -defaultlib=
 
 $(OBJDIR)/test_runner: $(UT_DRUNTIME) src/test_runner.d
-	$(DMD) $(UDFLAGS) -of$@ src/test_runner.d -L-L$(OBJDIR) -L-rpath=$(OBJDIR) -L-l$(DRUNTIME_BASE)-ut -debuglib= -defaultlib=
+	$(DMD) $(UDFLAGS) -of$@ src/test_runner.d -L$(UT_DRUNTIME) -debuglib= -defaultlib=
 
 endif
 
@@ -211,24 +232,33 @@ $(OBJDIR)/% : $(OBJDIR)/test_runner
 # succeeded, render the file new again
 	@touch $@
 
+test/init_fini/.run test/exceptions/.run: $(DRUNTIME)
+test/shared/.run: $(DRUNTIMESO)
+
+test/%/.run: test/%/Makefile
+	$(QUIET)$(MAKE) -C test/$* MODEL=$(MODEL) OS=$(OS) DMD=$(abspath $(DMD)) \
+		DRUNTIME=$(abspath $(DRUNTIME)) DRUNTIMESO=$(abspath $(DRUNTIMESO)) QUIET=$(QUIET) LINKDL=$(LINKDL)
+
 detab:
 	detab $(MANIFEST)
 	tolf $(MANIFEST)
 
 zip: druntime.zip
 
-druntime.zip: $(MANIFEST) $(DOCS) $(IMPORTS)
+druntime.zip: $(MANIFEST) $(IMPORTS)
 	rm -rf $@
 	zip $@ $^
 
 install: target
-	mkdir -p $(INSTALL_DIR)/html
-	cp -r doc/* $(INSTALL_DIR)/html/
-	mkdir -p $(INSTALL_DIR)/import
-	cp -r import/* $(INSTALL_DIR)/import/
-	mkdir -p $(INSTALL_DIR)/lib
-	cp -r lib/* $(INSTALL_DIR)/lib/
+	mkdir -p $(INSTALL_DIR)/src/druntime/import
+	cp -r import/* $(INSTALL_DIR)/src/druntime/import/
+	$(eval lib_dir=$(if $(filter $(OS),osx), lib, lib$(MODEL)))
+	mkdir -p $(INSTALL_DIR)/$(OS)/$(lib_dir)
+	cp -r lib/* $(INSTALL_DIR)/$(OS)/$(lib_dir)/
 	cp LICENSE $(INSTALL_DIR)/druntime-LICENSE.txt
 
-clean:
+clean: $(addsuffix /.clean,$(ADDITIONAL_TESTS))
 	rm -rf obj lib $(IMPDIR) $(DOCDIR) druntime.zip
+
+test/%/.clean: test/%/Makefile
+	$(MAKE) -C test/$* clean

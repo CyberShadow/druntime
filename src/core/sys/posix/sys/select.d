@@ -2,7 +2,7 @@
  * D header file for POSIX.
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Sean Kelly, Alex Rønne Petersen
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
  */
@@ -24,7 +24,7 @@ public import core.sys.posix.signal;    // for sigset_t
 version(unittest) import core.stdc.stdio: printf;
 
 version (Posix):
-extern (C):
+extern (C) nothrow @nogc:
 
 //
 // Required
@@ -181,7 +181,7 @@ else version( FreeBSD )
 
     struct fd_set
     {
-        __fd_mask __fds_bits[(FD_SETSIZE + (_NFDBITS - 1)) / _NFDBITS];
+        __fd_mask[(FD_SETSIZE + (_NFDBITS - 1)) / _NFDBITS] __fds_bits;
     }
 
     extern (D) __fd_mask __fdset_mask(uint n)
@@ -260,6 +260,55 @@ else version (Solaris)
 
     int select(int, fd_set*, fd_set*, fd_set*, timeval*);
     int pselect(int, fd_set*, fd_set*, fd_set*, in timespec*, in sigset_t*);
+}
+else version( Android )
+{
+    private
+    {
+        alias c_ulong __fd_mask;
+        enum uint __NFDBITS = 8 * __fd_mask.sizeof;
+
+        extern (D) auto __FDELT( int d )
+        {
+            return d / __NFDBITS;
+        }
+
+        extern (D) auto __FDMASK( int d )
+        {
+            return cast(__fd_mask) 1 << ( d % __NFDBITS );
+        }
+    }
+
+    enum FD_SETSIZE = 1024;
+
+    struct fd_set
+    {
+        __fd_mask[FD_SETSIZE / __NFDBITS] fds_bits;
+    }
+
+    // These functions are generated in assembly in bionic.
+    extern (D) void FD_CLR( int fd, fd_set* fdset )
+    {
+        fdset.fds_bits[__FDELT( fd )] &= ~__FDMASK( fd );
+    }
+
+    extern (D) bool FD_ISSET( int fd, const(fd_set)* fdset )
+    {
+        return (fdset.fds_bits[__FDELT( fd )] & __FDMASK( fd )) != 0;
+    }
+
+    extern (D) void FD_SET( int fd, fd_set* fdset )
+    {
+        fdset.fds_bits[__FDELT( fd )] |= __FDMASK( fd );
+    }
+
+    extern (D) void FD_ZERO( fd_set* fdset )
+    {
+        fdset.fds_bits[0 .. $] = 0;
+    }
+
+    int pselect(int, fd_set*, fd_set*, fd_set*, in timespec*, in sigset_t*);
+    int select(int, fd_set*, fd_set*, fd_set*, timeval*);
 }
 else
 {

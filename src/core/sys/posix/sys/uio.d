@@ -2,7 +2,7 @@
  * D header file for POSIX.
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Sean Kelly, Alex Rønne Petersen
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
  */
@@ -18,7 +18,7 @@ private import core.sys.posix.config;
 public import core.sys.posix.sys.types; // for ssize_t, size_t
 
 version (Posix):
-extern (C):
+extern (C) nothrow @nogc:
 
 //
 // Required
@@ -80,6 +80,24 @@ else version (Solaris)
 
     ssize_t readv(int, in iovec*, int);
     ssize_t writev(int, in iovec*, int);
+}
+else version( Android )
+{
+    version (X86)
+    {
+        struct iovec
+        {
+            void* iov_base;
+            uint  iov_len;
+        }
+    }
+    else
+    {
+        static assert(false, "Architecture not supported.");
+    }
+
+    int readv(int, in iovec*, int);
+    int writev(int, in iovec*, int);
 }
 else
 {

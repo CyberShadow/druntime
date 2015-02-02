@@ -63,6 +63,7 @@ module core.cpuid;
 
 @trusted:
 nothrow:
+@nogc:
 
 // If optimizing for a particular processor, it is generally better
 // to identify based on features rather than model. NOTE: Normally
@@ -175,6 +176,10 @@ public:
     bool hle()          {return (extfeatures & HLE_BIT) != 0;}
     /// Is RTM (restricted transactional memory) supported
     bool rtm()          {return (extfeatures & RTM_BIT) != 0;}
+    /// Is rdseed supported
+    bool hasRdseed()    {return (extfeatures&RDSEED_BIT)!=0;}
+    /// Is SHA supported
+    bool hasSha()       {return (extfeatures&SHA_BIT)!=0;}
     /// Is AMD 3DNOW supported?
     bool amd3dnow()     {return (amdfeatures&AMD_3DNOW_BIT)!=0;}
     /// Is AMD 3DNOW Ext supported?
@@ -322,15 +327,17 @@ private:
     // Feature flags for cpuid.{EAX = 7, ECX = 0}.EBX.
     enum : uint
     {
-        FSGSBASE_BIT = 1 << 1,
-        BMI1_BIT = 1 << 4,
-        HLE_BIT = 1 << 5,
-        AVX2_BIT = 1 << 6,
-        SMEP_BIT = 1 << 8,
-        BMI2_BIT = 1 << 9,
-        ERMS_BIT = 1 << 10,
-        INVPCID_BIT = 1 << 11,
-        RTM_BIT = 1 << 12,
+        FSGSBASE_BIT = 1 << 0,
+        BMI1_BIT = 1 << 3,
+        HLE_BIT = 1 << 4,
+        AVX2_BIT = 1 << 5,
+        SMEP_BIT = 1 << 7,
+        BMI2_BIT = 1 << 8,
+        ERMS_BIT = 1 << 9,
+        INVPCID_BIT = 1 << 10,
+        RTM_BIT = 1 << 11,
+        RDSEED_BIT = 1 << 18,
+        SHA_BIT = 1 << 29,
     }
     // feature flags XFEATURES_ENABLED_MASK
     enum : ulong
@@ -370,7 +377,7 @@ __gshared uint max_cpuid, max_extended_cpuid;
 void getcacheinfoCPUID2()
 {
     // We are only interested in the data caches
-    void decipherCpuid2(ubyte x) {
+    void decipherCpuid2(ubyte x) @nogc nothrow {
         if (x==0) return;
         // Values from http://www.sandpile.org/ia32/cpuid.htm.
         // Includes Itanium and non-Intel CPUs.
@@ -429,7 +436,7 @@ void getcacheinfoCPUID2()
     // for old single-core CPUs.
     uint numinfos = 1;
     do {
-        asm {
+        asm pure nothrow @nogc {
             mov EAX, 2;
             cpuid;
             mov a, EAX;
@@ -471,7 +478,7 @@ void getcacheinfoCPUID4()
     int cachenum = 0;
     for(;;) {
         uint a, b, number_of_sets;
-        asm {
+        asm pure nothrow @nogc {
             mov EAX, 4;
             mov ECX, cachenum;
             cpuid;
@@ -509,7 +516,7 @@ void getcacheinfoCPUID4()
 void getAMDcacheinfo()
 {
     uint c5, c6, d6;
-    asm {
+    asm pure nothrow @nogc {
         mov EAX, 0x8000_0005; // L1 cache
         cpuid;
         // EAX has L1_TLB_4M.
@@ -526,7 +533,7 @@ void getAMDcacheinfo()
         // AMD K6-III or K6-2+ or later.
         ubyte numcores = 1;
         if (max_extended_cpuid >=0x8000_0008) {
-            asm {
+            asm pure nothrow @nogc {
                 mov EAX, 0x8000_0008;
                 cpuid;
                 mov numcores, CL;
@@ -534,14 +541,14 @@ void getAMDcacheinfo()
             ++numcores;
             if (numcores>maxCores) maxCores = numcores;
         }
-        asm {
+        asm pure nothrow @nogc {
             mov EAX, 0x8000_0006; // L2/L3 cache
             cpuid;
             mov c6, ECX; // L2 cache info
             mov d6, EDX; // L3 cache info
         }
 
-        immutable ubyte [] assocmap = [ 0, 1, 2, 0, 4, 0, 8, 0, 16, 0, 32, 48, 64, 96, 128, 0xFF ];
+        static immutable ubyte [] assocmap = [ 0, 1, 2, 0, 4, 0, 8, 0, 16, 0, 32, 48, 64, 96, 128, 0xFF ];
         datacache[1].size = (c6>>16) & 0xFFFF;
         datacache[1].associativity = assocmap[(c6>>12)&0xF];
         datacache[1].lineSize = c6 & 0xFF;
@@ -561,7 +568,7 @@ void getCpuInfo0B()
     int threadsPerCore;
     uint a, b, c, d;
     do {
-        asm {
+        asm pure nothrow @nogc {
             mov EAX, 0x0B;
             mov ECX, level;
             cpuid;
@@ -592,7 +599,7 @@ void cpuidX86()
     uint a, b, c, d, a2;
     version(D_InlineAsm_X86)
     {
-        asm {
+        asm pure nothrow @nogc {
             mov EAX, 0;
             cpuid;
             mov a, EAX;
@@ -604,7 +611,7 @@ void cpuidX86()
     }
     else version(D_InlineAsm_X86_64)
     {
-        asm {
+        asm pure nothrow @nogc {
             mov EAX, 0;
             cpuid;
             mov a, EAX;
@@ -614,7 +621,7 @@ void cpuidX86()
             mov [RAX + 8], ECX;
         }
     }
-    asm {
+    asm pure nothrow @nogc {
         mov EAX, 0x8000_0000;
         cpuid;
         mov a2, EAX;
@@ -626,7 +633,7 @@ void cpuidX86()
     probablyIntel = vendorID == "GenuineIntel";
     probablyAMD = vendorID == "AuthenticAMD";
     uint apic = 0; // brand index, apic id
-    asm {
+    asm pure nothrow @nogc {
         mov EAX, 1; // model, stepping
         cpuid;
         mov a, EAX;
@@ -641,7 +648,7 @@ void cpuidX86()
     {
         uint ext;
 
-        asm
+        asm pure nothrow @nogc
         {
             mov EAX, 7; // Structured extended feature leaf.
             mov ECX, 0; // Main leaf.
@@ -654,7 +661,7 @@ void cpuidX86()
 
     if (miscfeatures & OSXSAVE_BIT)
     {
-        asm {
+        asm pure nothrow @nogc {
             mov ECX, 0;
             xgetbv;
             mov d, EDX;
@@ -665,7 +672,7 @@ void cpuidX86()
     amdfeatures = 0;
     amdmiscfeatures = 0;
     if (max_extended_cpuid >= 0x8000_0001) {
-        asm {
+        asm pure nothrow @nogc {
             mov EAX, 0x8000_0001;
             cpuid;
             mov c, ECX;
@@ -686,7 +693,7 @@ void cpuidX86()
 
     if (!probablyIntel && max_extended_cpuid >= 0x8000_0008) {
         // determine max number of cores for AMD
-        asm {
+        asm pure nothrow @nogc {
             mov EAX, 0x8000_0008;
             cpuid;
             mov c, ECX;
@@ -707,7 +714,7 @@ void cpuidX86()
         char *procptr = processorNameBuffer.ptr;
         version(D_InlineAsm_X86)
         {
-            asm {
+            asm pure nothrow @nogc {
                 push ESI;
                 mov ESI, procptr;
                 mov EAX, 0x8000_0002;
@@ -733,7 +740,7 @@ void cpuidX86()
         }
         else version(D_InlineAsm_X86_64)
         {
-            asm {
+            asm pure nothrow @nogc {
                 push RSI;
                 mov RSI, procptr;
                 mov EAX, 0x8000_0002;
@@ -839,7 +846,7 @@ bool hasCPUID()
     else
     {
         uint flags;
-        asm {
+        asm nothrow @nogc {
             pushfd;
             pop EAX;
             mov flags, EAX;

@@ -2,7 +2,7 @@
  * D header file for POSIX.
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Sean Kelly, Alex Rønne Petersen
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
  */
@@ -19,7 +19,7 @@ public import core.sys.posix.sys.types;  // for time_t, suseconds_t
 public import core.sys.posix.sys.select; // for fd_set, FD_CLR() FD_ISSET() FD_SET() FD_ZERO() FD_SETSIZE, select()
 
 version (Posix):
-extern (C):
+extern (C) nothrow @nogc:
 
 //
 // XOpen (XSI)
@@ -139,6 +139,35 @@ else version (Solaris)
 
     int getitimer(int, itimerval*);
     int gettimeofday(timeval*, void*);
+    int setitimer(int, in itimerval*, itimerval*);
+    int utimes(in char*, ref const(timeval)[2]);
+}
+else version( Android )
+{
+    struct timeval
+    {
+        time_t      tv_sec;
+        suseconds_t tv_usec;
+    }
+
+    struct itimerval
+    {
+        timeval it_interval;
+        timeval it_value;
+    }
+
+    struct timezone_t
+    {
+        int tz_minuteswest;
+        int tz_dsttime;
+    }
+
+    enum ITIMER_REAL    = 0;
+    enum ITIMER_VIRTUAL = 1;
+    enum ITIMER_PROF    = 2;
+
+    int getitimer(int, itimerval*);
+    int gettimeofday(timeval*, timezone_t*);
     int setitimer(int, in itimerval*, itimerval*);
     int utimes(in char*, ref const(timeval)[2]);
 }

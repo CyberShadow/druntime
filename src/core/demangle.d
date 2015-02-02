@@ -2,25 +2,19 @@
  * The demangle module converts mangled D symbols to a representation similar
  * to what would have existed in code.
  *
- * Copyright: Copyright Sean Kelly 2010 - 2010.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * Copyright: Copyright Sean Kelly 2010 - 2014.
+ * License: Distributed under the
+ *      $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost Software License 1.0).
+ *    (See accompanying file LICENSE)
  * Authors:   Sean Kelly
+ * Source:    $(DRUNTIMESRC core/_demangle.d)
  */
 
-/*          Copyright Sean Kelly 2010 - 2010.
- * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE or copy at
- *          http://www.boost.org/LICENSE_1_0.txt)
- */
 module core.demangle;
 
 
 debug(trace) import core.stdc.stdio : printf;
 debug(info) import core.stdc.stdio : printf;
-import core.stdc.stdio : snprintf;
-import core.stdc.string : memmove;
-import core.stdc.stdlib : strtold;
-
 
 private struct Demangle
 {
@@ -92,7 +86,7 @@ private struct Demangle
         //throw new ParseException( msg );
         debug(info) printf( "error: %.*s\n", cast(int) msg.length, msg.ptr );
         throw __ctfe ? new ParseException(msg)
-                     : cast(ParseException) cast(void*) ParseException.classinfo.init;
+                     : cast(ParseException) cast(void*) typeid(ParseException).init;
 
     }
 
@@ -101,7 +95,7 @@ private struct Demangle
     {
         //throw new OverflowException( msg );
         debug(info) printf( "overflow: %.*s\n", cast(int) msg.length, msg.ptr );
-        throw cast(OverflowException) cast(void*) OverflowException.classinfo.init;
+        throw cast(OverflowException) cast(void*) typeid(OverflowException).init;
     }
 
 
@@ -233,7 +227,7 @@ private struct Demangle
 
     char[] putAsHex( size_t val, int width = 0 )
     {
-        char tmp[20];
+        char[20] tmp;
         int  pos = tmp.length;
 
         while( val )
@@ -305,7 +299,7 @@ private struct Demangle
 
     void match( const(char)[] val )
     {
-        foreach( e; val )
+        foreach(char e; val )
         {
             test( e );
             next();
@@ -440,7 +434,9 @@ private struct Demangle
 
         tbuf[tlen] = 0;
         debug(info) printf( "got (%s)\n", tbuf.ptr );
+        import core.stdc.stdlib : strtold;
         val = strtold( tbuf.ptr, null );
+        import core.stdc.stdio : snprintf;
         tlen = snprintf( tbuf.ptr, tbuf.length, "%#Lg", val );
         debug(info) printf( "converted (%.*s)\n", cast(int) tlen, tbuf.ptr );
         put( tbuf[0 .. tlen] );
@@ -478,7 +474,7 @@ private struct Demangle
             error( "LName must be at least 1 character" );
         if( '_' != tok() && !isAlpha( tok() ) )
             error( "Invalid character in LName" );
-        foreach( e; buf[pos + 1 .. pos + n] )
+        foreach(char e; buf[pos + 1 .. pos + n] )
         {
             if( '_' != e && !isAlpha( e ) && !isDigit( e ) )
                 error( "Invalid character in LName" );
@@ -496,7 +492,7 @@ private struct Demangle
         Immutable
         Wild
         TypeArray
-        TypeNewArray
+        TypeVector
         TypeStaticArray
         TypeAssocArray
         TypePointer
@@ -547,8 +543,8 @@ private struct Demangle
     TypeArray:
         A Type
 
-    TypeNewArray:
-        Ne Type
+    TypeVector:
+        Nh Type
 
     TypeStaticArray:
         G Number Type
@@ -719,10 +715,11 @@ private struct Demangle
                 parseType();
                 put( ")" );
                 return dst[beg .. len];
-            case 'e': // TypeNewArray (Ne Type)
+            case 'h': // TypeVector (Nh Type)
                 next();
-                // TODO: Anything needed here?
+                put( "__vector(" );
                 parseType();
+                put( ")" );
                 return dst[beg .. len];
             default:
                 error();
@@ -782,6 +779,16 @@ private struct Demangle
             next();
             // TODO: Handle this.
             return dst[beg .. len];
+        case 'Z': // Internal symbol
+            // This 'type' is used for untyped internal symbols, i.e.:
+            // __array
+            // __init
+            // __vtbl
+            // __Class
+            // __Interface
+            // __ModuleInfo
+            next();
+            return dst[beg .. len];
         default:
             if (t >= 'a' && t <= 'w')
             {
@@ -838,6 +845,9 @@ private struct Demangle
     FuncAttrSafe:
         Nf
 
+    FuncAttrNogc:
+        Ni
+
     Arguments:
         Argument
         Argument Arguments
@@ -857,13 +867,8 @@ private struct Demangle
         Y     // variadic T t...) style
         Z     // not variadic
     */
-    enum IsDelegate { no, yes }
-    char[] parseTypeFunction( char[] name = null, IsDelegate isdg = IsDelegate.no )
+    void parseCallConvention()
     {
-        debug(trace) printf( "parseTypeFunction+\n" );
-        debug(trace) scope(success) printf( "parseTypeFunction-\n" );
-        auto beg = len;
-
         // CallConvention
         switch( tok() )
         {
@@ -889,7 +894,10 @@ private struct Demangle
         default:
             error();
         }
+    }
 
+    void parseFuncAttr()
+    {
         // FuncAttrs
         breakFuncAttrs:
         while( 'N' == tok() )
@@ -922,42 +930,26 @@ private struct Demangle
                 put( "@safe " );
                 continue;
             case 'g':
-                // NOTE: The inout parameter type is represented as "Ng",
-                //       which makes it look like a FuncAttr.  So if we
-                //       see an "Ng" FuncAttr we know we're really in
+            case 'h':
+                // NOTE: The inout parameter type is represented as "Ng".
+                //       The vector parameter type is represented as "Nh".
+                //       These make it look like a FuncAttr, but infact
+                //       if we see these, then we know we're really in
                 //       the parameter list.  Rewind and break.
                 pos--;
                 break breakFuncAttrs;
+            case 'i': // FuncAttrNogc
+                next();
+                put( "@nogc " );
+                continue;
             default:
                 error();
             }
         }
+    }
 
-        beg = len;
-        put( "(" );
-        scope(success)
-        {
-            put( ")" );
-            auto t = len;
-            parseType();
-            put( " " );
-            if( name.length )
-            {
-                if( !contains( dst[0 .. len], name ) )
-                    put( name );
-                else if( shift( name ).ptr != name.ptr )
-                {
-                    beg -= name.length;
-                    t -= name.length;
-                }
-            }
-            else if( IsDelegate.yes == isdg )
-                put( "delegate" );
-            else
-                put( "function" );
-            shift( dst[beg .. t] );
-        }
-
+    void parseFuncArguments()
+    {
         // Arguments
         for( size_t n = 0; true; n++ )
         {
@@ -967,14 +959,14 @@ private struct Demangle
             case 'X': // ArgClose (variadic T t...) style)
                 next();
                 put( "..." );
-                return dst[beg .. len];
+                return;
             case 'Y': // ArgClose (variadic T t,...) style)
                 next();
                 put( ", ..." );
-                return dst[beg .. len];
+                return;
             case 'Z': // ArgClose (not variadic)
                 next();
-                return dst[beg .. len];
+                return;
             default:
                 break;
             }
@@ -1010,6 +1002,55 @@ private struct Demangle
         }
     }
 
+    enum IsDelegate { no, yes }
+    // returns the argument list with the left parenthesis, but not the right
+    char[] parseTypeFunction( char[] name = null, IsDelegate isdg = IsDelegate.no )
+    {
+        debug(trace) printf( "parseTypeFunction+\n" );
+        debug(trace) scope(success) printf( "parseTypeFunction-\n" );
+        auto beg = len;
+
+        parseCallConvention();
+        parseFuncAttr();
+
+        beg = len;
+        put( "(" );
+        scope(success)
+        {
+            put( ")" );
+            auto t = len;
+            parseType();
+            put( " " );
+            if( name.length )
+            {
+                if( !contains( dst[0 .. len], name ) )
+                    put( name );
+                else if( shift( name ).ptr != name.ptr )
+                {
+                    beg -= name.length;
+                    t -= name.length;
+                }
+            }
+            else if( IsDelegate.yes == isdg )
+                put( "delegate" );
+            else
+                put( "function" );
+            shift( dst[beg .. t] );
+        }
+        parseFuncArguments();
+        return dst[beg..len];
+    }
+
+    static bool isCallConvention( char ch )
+    {
+        switch( ch )
+        {
+            case 'F', 'U', 'V', 'W', 'R':
+                return true;
+            default:
+                return false;
+        }
+    }
 
     /*
     Value:
@@ -1061,7 +1102,7 @@ private struct Demangle
             next();
             if( '0' > tok() || '9' < tok() )
                 error( "Number expected" );
-            // fall-through intentional
+            goto case;
         case '0': .. case '9':
             parseIntegerValue( name, type );
             return;
@@ -1263,6 +1304,10 @@ private struct Demangle
         TemplateArg TemplateArgs
 
     TemplateArg:
+        TemplateArgX
+        H TemplateArgX
+
+    TemplateArgX:
         T Type
         V Type Value
         S LName
@@ -1274,6 +1319,9 @@ private struct Demangle
 
         for( size_t n = 0; true; n++ )
         {
+            if( tok() == 'H' )
+                next();
+
             switch( tok() )
             {
             case 'T':
@@ -1295,12 +1343,57 @@ private struct Demangle
             case 'S':
                 next();
                 if( n ) put( ", " );
+
+                if ( mayBeMangledNameArg() )
+                {
+                    auto l = len;
+                    auto p = pos;
+
+                    try
+                    {
+                        debug(trace) printf( "may be mangled name arg\n" );
+                        parseMangledNameArg();
+                        continue;
+                    }
+                    catch( ParseException e )
+                    {
+                        len = l;
+                        pos = p;
+                        debug(trace) printf( "not a mangled name arg\n" );
+                    }
+                }
+
                 parseQualifiedName();
                 continue;
             default:
                 return;
             }
         }
+    }
+
+
+    bool mayBeMangledNameArg()
+    {
+        debug(trace) printf( "mayBeMangledNameArg+\n" );
+        debug(trace) scope(success) printf( "mayBeMangledNameArg-\n" );
+
+        auto p = pos;
+        scope(exit) pos = p;
+        auto n = decodeNumber();
+        return n >= 4 &&
+           pos < buf.length && '_' == buf[pos++] &&
+           pos < buf.length && 'D' == buf[pos++] &&
+           isDigit(buf[pos]);
+    }
+
+
+    void parseMangledNameArg()
+    {
+        debug(trace) printf( "parseMangledNameArg+\n" );
+        debug(trace) scope(success) printf( "parseMangledNameArg-\n" );
+
+        auto n = decodeNumber();
+        parseMangledName( n );
     }
 
 
@@ -1399,6 +1492,36 @@ private struct Demangle
             if( n++ )
                 put( "." );
             parseSymbolName();
+
+            if( isCallConvention( tok() ) )
+            {
+                // try to demangle a function, in case we are pointing to some function local
+                auto prevpos = pos;
+                auto prevlen = len;
+
+                // we don't want calling convention and attributes in the qualified name
+                parseCallConvention();
+                parseFuncAttr();
+                len = prevlen;
+
+                put( "(" );
+                parseFuncArguments();
+                put( ")" );
+                if( !isDigit( tok() ) ) // voldemort types don't have a return type on the function
+                {
+                    auto funclen = len;
+                    parseType();
+
+                    if( !isDigit( tok() ) )
+                    {
+                        // not part of a qualified name, so back up
+                        pos = prevpos;
+                        len = prevlen;
+                    }
+                    else
+                        len = funclen; // remove return type from qualified name
+                }
+            }
         } while( isDigit( tok() ) );
         return dst[beg .. len];
     }
@@ -1409,11 +1532,13 @@ private struct Demangle
         _D QualifiedName Type
         _D QualifiedName M Type
     */
-    void parseMangledName()
+    void parseMangledName(size_t n = 0)
     {
         debug(trace) printf( "parseMangledName+\n" );
         debug(trace) scope(success) printf( "parseMangledName-\n" );
         char[] name = null;
+
+        auto end = pos + n;
 
         eat( '_' );
         match( 'D' );
@@ -1425,7 +1550,7 @@ private struct Demangle
                 next(); // has 'this' pointer
             if( AddType.yes == addType )
                 parseType( name );
-            if( pos >= buf.length )
+            if( pos >= buf.length || (n != 0 && pos >= end) )
                 return;
             put( "." );
         } while( true );
@@ -1518,6 +1643,224 @@ char[] demangleType( const(char)[] buf, char[] dst = null )
 }
 
 
+/**
+ * Mangles a D symbol.
+ *
+ * Params:
+ *  T = The type of the symbol.
+ *  fqn = The fully qualified name of the symbol.
+ *  dst = An optional destination buffer.
+ *
+ * Returns:
+ *  The mangled name for a symbols of type T and the given fully
+ *  qualified name.
+ */
+char[] mangle(T)(const(char)[] fqn, char[] dst = null) @safe pure nothrow
+{
+    static size_t numToString(char[] dst, size_t val) @safe pure nothrow
+    {
+        char[20] buf = void;
+        size_t i = buf.length;
+        do
+        {
+            buf[--i] = cast(char)(val % 10 + '0');
+        } while (val /= 10);
+        immutable len = buf.length - i;
+        if (dst.length >= len)
+            dst[0 .. len] = buf[i .. $];
+        return len;
+    }
+
+    static struct DotSplitter
+    {
+    @safe pure nothrow:
+        const(char)[] s;
+
+        @property bool empty() const { return !s.length; }
+
+        @property const(char)[] front() const
+        {
+            immutable i = indexOfDot();
+            return i == -1 ? s[0 .. $] : s[0 .. i];
+        }
+
+        void popFront()
+        {
+            immutable i = indexOfDot();
+            s = i == -1 ? s[$ .. $] : s[i+1 .. $];
+        }
+
+        private ptrdiff_t indexOfDot() const
+        {
+            foreach (i, c; s) if (c == '.') return i;
+            return -1;
+        }
+    }
+
+    size_t len = "_D".length;
+    foreach (comp; DotSplitter(fqn))
+        len += numToString(null, comp.length) + comp.length;
+    len += T.mangleof.length;
+    if (dst.length < len) dst.length = len;
+
+    size_t i = "_D".length;
+    dst[0 .. i] = "_D";
+    foreach (comp; DotSplitter(fqn))
+    {
+        i += numToString(dst[i .. $], comp.length);
+        dst[i .. i + comp.length] = comp[];
+        i += comp.length;
+    }
+    dst[i .. i + T.mangleof.length] = T.mangleof[];
+    i += T.mangleof.length;
+    return dst[0 .. i];
+}
+
+
+///
+unittest
+{
+    assert(mangle!int("a.b") == "_D1a1bi");
+    assert(mangle!(char[])("test.foo") == "_D4test3fooAa");
+    assert(mangle!(int function(int))("a.b") == "_D1a1bPFiZi");
+}
+
+unittest
+{
+    static assert(mangle!int("a.b") == "_D1a1bi");
+
+    auto buf = new char[](10);
+    buf = mangle!int("a.b", buf);
+    assert(buf == "_D1a1bi");
+    buf = mangle!(char[])("test.foo", buf);
+    assert(buf == "_D4test3fooAa");
+    buf = mangle!(real delegate(int))("modµ.dg");
+    assert(buf == "_D5modµ2dgDFiZe", buf);
+}
+
+
+/**
+ * Mangles a D function.
+ *
+ * Params:
+ *  T = function pointer type.
+ *  fqn = The fully qualified name of the symbol.
+ *  dst = An optional destination buffer.
+ *
+ * Returns:
+ *  The mangled name for a function with function pointer type T and
+ *  the given fully qualified name.
+ */
+char[] mangleFunc(T:FT*, FT)(const(char)[] fqn, char[] dst = null) @safe pure nothrow if (is(FT == function))
+{
+    static if (isExternD!FT)
+    {
+        return mangle!FT(fqn, dst);
+    }
+    else static if (hasPlainMangling!FT)
+    {
+        dst.length = fqn.length;
+        dst[] = fqn[];
+        return dst;
+    }
+    else static if (isExternCPP!FT)
+    {
+        static assert(0, "Can't mangle extern(C++) functions.");
+    }
+    else
+    {
+        static assert(0, "Can't mangle function with unknown linkage ("~FT.stringof~").");
+    }
+}
+
+
+///
+unittest
+{
+    assert(mangleFunc!(int function(int))("a.b") == "_D1a1bFiZi");
+    assert(mangleFunc!(int function(Object))("object.Object.opEquals") == "_D6object6Object8opEqualsFC6ObjectZi");
+}
+
+unittest
+{
+    int function(lazy int[], ...) fp;
+    assert(mangle!(typeof(fp))("demangle.test") == "_D8demangle4testPFLAiYi");
+    assert(mangle!(typeof(*fp))("demangle.test") == "_D8demangle4testFLAiYi");
+}
+
+private template isExternD(FT) if (is(FT == function))
+{
+    enum isExternD = FT.mangleof[0] == 'F';
+}
+
+private template isExternCPP(FT) if (is(FT == function))
+{
+    enum isExternCPP = FT.mangleof[0] == 'R';
+}
+
+private template hasPlainMangling(FT) if (is(FT == function))
+{
+    enum c = FT.mangleof[0];
+    // C || Pascal || Windows
+    enum hasPlainMangling = c == 'U' || c == 'V' || c == 'W';
+}
+
+unittest
+{
+    static extern(D) void fooD();
+    static extern(C) void fooC();
+    static extern(Pascal) void fooP();
+    static extern(Windows) void fooW();
+    static extern(C++) void fooCPP();
+
+    bool check(FT)(bool isD, bool isCPP, bool isPlain)
+    {
+        return isExternD!FT == isD && isExternCPP!FT == isCPP &&
+            hasPlainMangling!FT == isPlain;
+    }
+    static assert(check!(typeof(fooD))(true, false, false));
+    static assert(check!(typeof(fooC))(false, false, true));
+    static assert(check!(typeof(fooP))(false, false, true));
+    static assert(check!(typeof(fooW))(false, false, true));
+    static assert(check!(typeof(fooCPP))(false, true, false));
+
+    static assert(__traits(compiles, mangleFunc!(typeof(&fooD))("")));
+    static assert(__traits(compiles, mangleFunc!(typeof(&fooC))("")));
+    static assert(__traits(compiles, mangleFunc!(typeof(&fooP))("")));
+    static assert(__traits(compiles, mangleFunc!(typeof(&fooW))("")));
+    static assert(!__traits(compiles, mangleFunc!(typeof(&fooCPP))("")));
+}
+
+/**
+* Mangles a C function or variable.
+*
+* Params:
+*  dst = An optional destination buffer.
+*
+* Returns:
+*  The mangled name for a C function or variable, i.e.
+*  an underscore is prepended or not, depending on the
+*  compiler/linker tool chain
+*/
+char[] mangleC(const(char)[] sym, char[] dst = null)
+{
+    version(Win32)
+        enum string prefix = "_";
+    else version(OSX)
+        enum string prefix = "_";
+    else
+        enum string prefix = "";
+
+    auto len = sym.length + prefix.length;
+    if( dst.length < len )
+        dst.length = len;
+
+    dst[0 .. prefix.length] = prefix[];
+    dst[prefix.length .. len] = sym[];
+    return dst[0 .. len];
+}
+
+
 version(unittest)
 {
     immutable string[2][] table =
@@ -1540,9 +1883,9 @@ version(unittest)
         ["_D6plugin8generateFiiZAya", "immutable(char)[] plugin.generate(int, int)"],
         ["_D6plugin8generateFiiZAxa", "const(char)[] plugin.generate(int, int)"],
         ["_D6plugin8generateFiiZAOa", "shared(char)[] plugin.generate(int, int)"],
-        ["_D8demangle3fnAFZv3fnBMFZv", "void demangle.fnA().void fnB()"],
-        ["_D8demangle4mainFZv1S3fnCFZv", "void demangle.main().void S.fnC()"],
-        ["_D8demangle4mainFZv1S3fnDMFZv", "void demangle.main().void S.fnD()"],
+        ["_D8demangle3fnAFZv3fnBMFZv", "void demangle.fnA().fnB()"],
+        ["_D8demangle4mainFZv1S3fnCFZv", "void demangle.main().S.fnC()"],
+        ["_D8demangle4mainFZv1S3fnDMFZv", "void demangle.main().S.fnD()"],
         ["_D8demangle20__T2fnVAiA4i1i2i3i4Z2fnFZv", "void demangle.fn!([1, 2, 3, 4]).fn()"],
         ["_D8demangle10__T2fnVi1Z2fnFZv", "void demangle.fn!(1).fn()"],
         ["_D8demangle26__T2fnVS8demangle1SS2i1i2Z2fnFZv", "void demangle.fn!(demangle.S(1, 2)).fn()"],
@@ -1551,7 +1894,30 @@ version(unittest)
         ["_D8demangle13__T2fnVeeINFZ2fnFZv", "void demangle.fn!(real.infinity).fn()"],
         ["_D8demangle21__T2fnVHiiA2i1i2i3i4Z2fnFZv", "void demangle.fn!([1:2, 3:4]).fn()"],
         ["_D8demangle2fnFNgiZNgi", "inout(int) demangle.fn(inout(int))"],
-        ["_D8demangle29__T2fnVa97Va9Va0Vu257Vw65537Z2fnFZv", "void demangle.fn!('a', '\\t', \\x00, '\\u0101', '\\U00010001').fn()"]
+        ["_D8demangle29__T2fnVa97Va9Va0Vu257Vw65537Z2fnFZv", "void demangle.fn!('a', '\\t', \\x00, '\\u0101', '\\U00010001').fn()"],
+        ["_D2gc11gctemplates56__T8mkBitmapTS3std5range13__T4iotaTiTiZ4iotaFiiZ6ResultZ8mkBitmapFNbNiNfPmmZv",
+         "nothrow @nogc @safe void gc.gctemplates.mkBitmap!(std.range.iota!(int, int).iota(int, int).Result).mkBitmap(ulong*, ulong)"],
+        ["_D8serenity9persister6Sqlite70__T15SqlitePersisterTS8serenity9persister6Sqlite11__unittest6FZv4TestZ15SqlitePersister12__T7opIndexZ7opIndexMFmZS8serenity9persister6Sqlite11__unittest6FZv4Test",
+         "serenity.persister.Sqlite.__unittest6().Test serenity.persister.Sqlite.SqlitePersister!(serenity.persister.Sqlite.__unittest6().Test).SqlitePersister.opIndex!().opIndex(ulong)"],
+        ["_D8bug100274mainFZv5localMFZi","int bug10027.main().local()"],
+        ["_D8demangle4testFNhG16gZv", "void demangle.test(__vector(byte[16]))"],
+        ["_D8demangle4testFNhG8sZv", "void demangle.test(__vector(short[8]))"],
+        ["_D8demangle4testFNhG4iZv", "void demangle.test(__vector(int[4]))"],
+        ["_D8demangle4testFNhG2lZv", "void demangle.test(__vector(long[2]))"],
+        ["_D8demangle4testFNhG4fZv", "void demangle.test(__vector(float[4]))"],
+        ["_D8demangle4testFNhG2dZv", "void demangle.test(__vector(double[2]))"],
+        ["_D8demangle4testFNhG4fNhG4fZv", "void demangle.test(__vector(float[4]), __vector(float[4]))"],
+        ["_D8bug1119234__T3fooS23_D8bug111924mainFZ3bariZ3fooMFZv","void bug11192.foo!(int bug11192.main().bar).foo()"],
+        ["_D13libd_demangle12__ModuleInfoZ", "libd_demangle.__ModuleInfo"],
+        ["_D15TypeInfo_Struct6__vtblZ", "TypeInfo_Struct.__vtbl"],
+        ["_D3std5stdio12__ModuleInfoZ", "std.stdio.__ModuleInfo"],
+        ["_D3std6traits15__T8DemangleTkZ8Demangle6__initZ", "std.traits.Demangle!(uint).Demangle.__init"],
+        ["_D3foo3Bar7__ClassZ", "foo.Bar.__Class"],
+        ["_D3foo3Bar6__vtblZ", "foo.Bar.__vtbl"],
+        ["_D3foo3Bar11__interfaceZ", "foo.Bar.__interface"],
+        ["_D3foo7__arrayZ", "foo.__array"],
+        ["_D8link657428__T3fooVE8link65746Methodi0Z3fooFZi", "int link6574.foo!(0).foo()"],
+        ["_D8link657429__T3fooHVE8link65746Methodi0Z3fooFZi", "int link6574.foo!(0).foo()"],
     ];
 
     template staticIota(int x)

@@ -9,9 +9,9 @@ CC=dmc
 DOCDIR=doc
 IMPDIR=import
 
-DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -g -gs
-UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport
-DDOCFLAGS=-c -w -o- -Isrc -Iimport
+DFLAGS=-m$(MODEL) -O -release -dip25 -inline -w -Isrc -Iimport -g -gs
+UDFLAGS=-m$(MODEL) -O -release -dip25 -w -Isrc -Iimport
+DDOCFLAGS=-c -w -o- -Isrc -Iimport -version=CoreDdoc
 
 CFLAGS=
 
@@ -19,9 +19,9 @@ DRUNTIME_BASE=druntime
 DRUNTIME=lib\$(DRUNTIME_BASE).lib
 GCSTUB=lib\gcstub.obj
 
-DOCFMT=-version=CoreDdoc
+DOCFMT=
 
-target : import copydir copy $(DRUNTIME) doc $(GCSTUB)
+target : import copydir copy $(DRUNTIME) $(GCSTUB)
 
 $(mak\COPY)
 $(mak\DOCS)
@@ -50,6 +50,9 @@ $(DOCDIR)\core_atomic.html : src\core\atomic.d
 $(DOCDIR)\core_bitop.html : src\core\bitop.d
 	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $**
 
+$(DOCDIR)\core_checkedint.html : src\core\checkedint.d
+	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $**
+
 $(DOCDIR)\core_cpuid.html : src\core\cpuid.d
 	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $**
 
@@ -71,7 +74,7 @@ $(DOCDIR)\core_runtime.html : src\core\runtime.d
 $(DOCDIR)\core_simd.html : src\core\simd.d
 	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $**
 
-$(DOCDIR)\core_thread.html : src\core\thread.di
+$(DOCDIR)\core_thread.html : src\core\thread.d
 	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $**
 
 $(DOCDIR)\core_time.html : src\core\time.d
@@ -130,6 +133,7 @@ $(IMPDIR)\core\sync\semaphore.di : src\core\sync\semaphore.d
 
 copydir: $(IMPDIR)
 	mkdir $(IMPDIR)\core\stdc
+	mkdir $(IMPDIR)\core\internal
 	mkdir $(IMPDIR)\core\sys\freebsd\sys
 	mkdir $(IMPDIR)\core\sys\linux\sys
 	mkdir $(IMPDIR)\core\sys\osx\mach
@@ -137,6 +141,7 @@ copydir: $(IMPDIR)
 	mkdir $(IMPDIR)\core\sys\posix\net
 	mkdir $(IMPDIR)\core\sys\posix\netinet
 	mkdir $(IMPDIR)\core\sys\posix\sys
+	mkdir $(IMPDIR)\core\sys\solaris\sys
 	mkdir $(IMPDIR)\core\sys\windows
 	mkdir $(IMPDIR)\etc\linux
 
@@ -149,6 +154,9 @@ $(IMPDIR)\core\atomic.d : src\core\atomic.d
 	copy $** $@
 
 $(IMPDIR)\core\bitop.d : src\core\bitop.d
+	copy $** $@
+
+$(IMPDIR)\core\checkedint.d : src\core\checkedint.d
 	copy $** $@
 
 $(IMPDIR)\core\cpuid.d : src\core\cpuid.d
@@ -172,13 +180,22 @@ $(IMPDIR)\core\runtime.d : src\core\runtime.d
 $(IMPDIR)\core\simd.d : src\core\simd.d
 	copy $** $@
 
-$(IMPDIR)\core\thread.di : src\core\thread.di
+$(IMPDIR)\core\thread.d : src\core\thread.d
 	copy $** $@
 
 $(IMPDIR)\core\time.d : src\core\time.d
 	copy $** $@
 
 $(IMPDIR)\core\vararg.d : src\core\vararg.d
+	copy $** $@
+
+$(IMPDIR)\core\internal\convert.d : src\core\internal\convert.d
+	copy $** $@
+
+$(IMPDIR)\core\internal\hash.d : src\core\internal\hash.d
+	copy $** $@
+
+$(IMPDIR)\core\internal\traits.d : src\core\internal\traits.d
 	copy $** $@
 
 $(IMPDIR)\core\stdc\complex.d : src\core\stdc\complex.d
@@ -250,7 +267,31 @@ $(IMPDIR)\core\sys\freebsd\dlfcn.d : src\core\sys\freebsd\dlfcn.d
 $(IMPDIR)\core\sys\freebsd\execinfo.d : src\core\sys\freebsd\execinfo.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\freebsd\time.d : src\core\sys\freebsd\time.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\freebsd\sys\cdefs.d : src\core\sys\freebsd\sys\cdefs.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\freebsd\sys\elf.d : src\core\sys\freebsd\sys\elf.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\freebsd\sys\elf_common.d : src\core\sys\freebsd\sys\elf_common.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\freebsd\sys\elf32.d : src\core\sys\freebsd\sys\elf32.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\freebsd\sys\elf64.d : src\core\sys\freebsd\sys\elf64.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\freebsd\sys\event.d : src\core\sys\freebsd\sys\event.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\freebsd\sys\link_elf.d : src\core\sys\freebsd\sys\link_elf.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\freebsd\sys\mman.d : src\core\sys\freebsd\sys\mman.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\linux\config.d : src\core\sys\linux\config.d
@@ -274,13 +315,25 @@ $(IMPDIR)\core\sys\linux\execinfo.d : src\core\sys\linux\execinfo.d
 $(IMPDIR)\core\sys\linux\link.d : src\core\sys\linux\link.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\linux\termios.d : src\core\sys\linux\termios.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\linux\time.d : src\core\sys\linux\time.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\linux\tipc.d : src\core\sys\linux\tipc.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\linux\sys\inotify.d : src\core\sys\linux\sys\inotify.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\linux\sys\mman.d : src\core\sys\linux\sys\mman.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\linux\sys\signalfd.d : src\core\sys\linux\sys\signalfd.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\linux\sys\xattr.d : src\core\sys\linux\sys\xattr.d
-	copy $** $@
-
-$(IMPDIR)\core\sys\linux\sys\inotify.d : src\core\sys\linux\sys\inotify.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\osx\execinfo.d : src\core\sys\osx\execinfo.d
@@ -289,7 +342,16 @@ $(IMPDIR)\core\sys\osx\execinfo.d : src\core\sys\osx\execinfo.d
 $(IMPDIR)\core\sys\osx\pthread.d : src\core\sys\osx\pthread.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\osx\mach\dyld.d : src\core\sys\osx\mach\dyld.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\osx\mach\getsect.d : src\core\sys\osx\mach\getsect.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\osx\mach\kern_return.d : src\core\sys\osx\mach\kern_return.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\osx\mach\loader.d : src\core\sys\osx\mach\loader.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\osx\mach\port.d : src\core\sys\osx\mach\port.d
@@ -299,6 +361,12 @@ $(IMPDIR)\core\sys\osx\mach\semaphore.d : src\core\sys\osx\mach\semaphore.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\osx\mach\thread_act.d : src\core\sys\osx\mach\thread_act.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\osx\sys\cdefs.d : src\core\sys\osx\sys\cdefs.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\osx\sys\mman.d : src\core\sys\osx\sys\mman.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\posix\arpa\inet.d : src\core\sys\posix\arpa\inet.d
@@ -361,6 +429,9 @@ $(IMPDIR)\core\sys\posix\stdio.d : src\core\sys\posix\stdio.d
 $(IMPDIR)\core\sys\posix\stdlib.d : src\core\sys\posix\stdlib.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\posix\syslog.d : src\core\sys\posix\syslog.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\posix\sys\ioctl.d : src\core\sys\posix\sys\ioctl.d
 	copy $** $@
 
@@ -421,6 +492,54 @@ $(IMPDIR)\core\sys\posix\unistd.d : src\core\sys\posix\unistd.d
 $(IMPDIR)\core\sys\posix\utime.d : src\core\sys\posix\utime.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\solaris\dlfcn.d : src\core\sys\solaris\dlfcn.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\elf.d : src\core\sys\solaris\elf.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\execinfo.d : src\core\sys\solaris\execinfo.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\libelf.d : src\core\sys\solaris\libelf.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\link.d : src\core\sys\solaris\link.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\elf.d : src\core\sys\solaris\sys\elf.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\elf_386.d : src\core\sys\solaris\sys\elf_386.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\elf_amd64.d : src\core\sys\solaris\sys\elf_amd64.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\elf_notes.d : src\core\sys\solaris\sys\elf_notes.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\elf_SPARC.d : src\core\sys\solaris\sys\elf_SPARC.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\elftypes.d : src\core\sys\solaris\sys\elftypes.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\link.d : src\core\sys\solaris\sys\link.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\procset.d : src\core\sys\solaris\sys\procset.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\types.d : src\core\sys\solaris\sys\types.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\solaris\sys\priocntl.d : src\core\sys\solaris\sys\priocntl.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\windows\com.d : src\core\sys\windows\com.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\windows\dbghelp.d : src\core\sys\windows\dbghelp.d
 	copy $** $@
 
@@ -430,10 +549,16 @@ $(IMPDIR)\core\sys\windows\dll.d : src\core\sys\windows\dll.d
 $(IMPDIR)\core\sys\windows\stacktrace.d : src\core\sys\windows\stacktrace.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\windows\stat.d : src\core\sys\windows\stat.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\windows\threadaux.d : src\core\sys\windows\threadaux.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\windows\windows.d : src\core\sys\windows\windows.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\windows\winsock2.d : src\core\sys\windows\winsock2.d
 	copy $** $@
 
 $(IMPDIR)\etc\linux\memoryerror.d : src\etc\linux\memoryerror.d
@@ -457,15 +582,15 @@ $(GCSTUB) : src\gcstub\gc.d win$(MODEL).mak
 $(DRUNTIME): $(OBJS) $(SRCS) win$(MODEL).mak
 	$(DMD) -lib -of$(DRUNTIME) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
-unittest : $(SRCS) $(DRUNTIME) src\unittest.d
-	$(DMD) $(UDFLAGS) -L/co -version=druntime_unittest -unittest src\unittest.d $(SRCS) $(DRUNTIME) -debuglib=$(DRUNTIME) -defaultlib=$(DRUNTIME)
+unittest : $(SRCS) $(DRUNTIME)
+	$(DMD) $(UDFLAGS) -L/co -unittest -ofunittest.exe -main $(SRCS) $(DRUNTIME) -debuglib=$(DRUNTIME) -defaultlib=$(DRUNTIME)
 	unittest
 
 zip: druntime.zip
 
-druntime.zip: doc import
+druntime.zip: import
 	del druntime.zip
-	zip32 -T -ur druntime $(MANIFEST) $(DOCS) $(IMPDIR) src\rt\minit.obj
+	zip32 -T -ur druntime $(MANIFEST) $(IMPDIR) src\rt\minit.obj
 
 install: druntime.zip
 	unzip -o druntime.zip -d \dmd2\src\druntime

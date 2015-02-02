@@ -5,7 +5,6 @@
  * License:   $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
  * Authors:    Martin Nowak
  */
-
 import std.array, std.file, std.path;
 
 void runTest(string[] words)
@@ -20,9 +19,7 @@ void runTest(string[] words)
 
 void main(string[] args)
 {
-    // test/bin/aabench/string => test/extra-files/dante.txt
-    auto path = dirName(dirName(dirName(absolutePath(args[0]))));
-    path = buildPath(path, "extra-files", "dante.txt");
+    auto path = args.length > 1 ? args[1] : "extra-files/dante.txt";
     auto words = split(std.file.readText(path));
     runTest(words);
 }

@@ -2,7 +2,7 @@
  * Implementation of support routines for synchronized blocks.
  *
  * Copyright: Copyright Digital Mars 2000 - 2011.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Walter Bright, Sean Kelly
  */
 
@@ -31,6 +31,10 @@ private
         version = USE_PTHREADS;
     }
     else version( Solaris )
+    {
+        version = USE_PTHREADS;
+    }
+    else version( Android )
     {
         version = USE_PTHREADS;
     }
@@ -74,7 +78,7 @@ private
 
 version( Windows )
 {
-    version (Win32)
+    version (CRuntime_DigitalMars)
         pragma(lib, "snn.lib");
 
     /******************************************

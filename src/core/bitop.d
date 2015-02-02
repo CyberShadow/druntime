@@ -11,6 +11,7 @@ module core.bitop;
 
 nothrow:
 @safe:
+@nogc:
 
 version( D_InlineAsm_X86_64 )
     version = AsmX86;
@@ -76,9 +77,7 @@ unittest
  * (No longer an intrisic - the compiler recognizes the patterns
  * in the body.)
  */
-@system
-{
-int bt(in size_t* p, size_t bitnum) pure
+int bt(in size_t* p, size_t bitnum) pure @system
 {
     static if (size_t.sizeof == 8)
         return ((p[bitnum >> 6] & (1L << (bitnum & 63)))) != 0;
@@ -87,38 +86,36 @@ int bt(in size_t* p, size_t bitnum) pure
     else
         static assert(0);
 }
-
-unittest
+///
+@system pure unittest
 {
-    size_t array[2];
+    size_t[2] array;
 
     array[0] = 2;
     array[1] = 0x100;
-
 
     assert(bt(array.ptr, 1));
     assert(array[0] == 2);
     assert(array[1] == 0x100);
 }
-}
 
 /**
  * Tests and complements the bit.
  */
-int btc(size_t* p, size_t bitnum) pure;
+int btc(size_t* p, size_t bitnum) pure @system;
 
 
 /**
  * Tests and resets (sets to 0) the bit.
  */
-int btr(size_t* p, size_t bitnum) pure;
+int btr(size_t* p, size_t bitnum) pure @system;
 
 
 /**
  * Tests and sets the bit.
  * Params:
  * p = a non-NULL pointer to an array of size_ts.
- * index = a bit number, starting with bit 0 of p[0],
+ * bitnum = a bit number, starting with bit 0 of p[0],
  * and progressing. It addresses bits like the expression:
 ---
 p[index / (size_t.sizeof*8)] & (1 << (index & ((size_t.sizeof*8) - 1)))
@@ -126,48 +123,13 @@ p[index / (size_t.sizeof*8)] & (1 << (index & ((size_t.sizeof*8) - 1)))
  * Returns:
  *      A non-zero value if the bit was set, and a zero
  *      if it was clear.
- *
- * Example:
- * ---
-import std.stdio;
-import core.bitop;
-
-int main()
-{
-    size_t array[2];
-
-    array[0] = 2;
-    array[1] = 0x100;
-
-    assert(btc(array, 35) == 0);
-    assert(array[0] == 2);
-    assert(array[1] == 0x108);
-
-    assert(btc(array, 35));
-    assert(array[0] == 2);
-    assert(array[1] == 0x100);
-
-    assert(bts(array, 35) == 0);
-    assert(array[0] == 2);
-    assert(array[1] == 0x108);
-
-    assert(btr(array, 35));
-    assert(array[0] == 2);
-    assert(array[1] == 0x100);
-
-    assert(bt(array, 1));
-    assert(array[0] == 2);
-    assert(array[1] == 0x100);
-
-    return 0;
-}
- * ---
  */
-int bts(size_t* p, size_t bitnum) pure;
+int bts(size_t* p, size_t bitnum) pure @system;
 
-unittest
+///
+@system pure unittest
 {
-    size_t array[2];
+    size_t[2] array;
 
     array[0] = 2;
     array[1] = 0x100;
@@ -250,6 +212,112 @@ version (DigitalMars) version (AnyX86) @system // not pure
     uint outpl(uint port_address, uint value);
 }
 
+version (AnyX86)
+{
+    /**
+     * Calculates the number of set bits in a 32-bit integer
+     * using the X86 SSE4 POPCNT instruction.
+     * POPCNT is not available on all X86 CPUs.
+     */
+    ushort _popcnt( ushort x ) pure;
+    /// ditto
+    int _popcnt( uint x ) pure;
+    version (X86_64)
+    {
+        /// ditto
+        int _popcnt( ulong x ) pure;
+    }
+
+    unittest
+    {
+        // Not everyone has SSE4 instructions
+        import core.cpuid;
+        if (!hasPopcnt)
+            return;
+
+        static int popcnt_x(ulong u) nothrow @nogc
+        {
+            int c;
+            while (u)
+            {
+                c += u & 1;
+                u >>= 1;
+            }
+            return c;
+        }
+
+        for (uint u = 0; u < 0x1_0000; ++u)
+        {
+            //writefln("%x %x %x", u,   _popcnt(cast(ushort)u), popcnt_x(cast(ushort)u));
+            assert(_popcnt(cast(ushort)u) == popcnt_x(cast(ushort)u));
+
+            assert(_popcnt(cast(uint)u) == popcnt_x(cast(uint)u));
+            uint ui = u * 0x3_0001;
+            assert(_popcnt(ui) == popcnt_x(ui));
+
+            version (X86_64)
+            {
+                assert(_popcnt(cast(ulong)u) == popcnt_x(cast(ulong)u));
+                ulong ul = u * 0x3_0003_0001;
+                assert(_popcnt(ul) == popcnt_x(ul));
+            }
+        }
+    }
+}
+
+/*************************************
+ * Read/write value from/to the memory location indicated by ptr.
+ *
+ * These functions are recognized by the compiler, and calls to them are guaranteed
+ * to not be removed (as dead assignment elimination or presumed to have no effect)
+ * or reordered in the same thread.
+ *
+ * These reordering guarantees are only made with regards to other
+ * operations done through these functions; the compiler is free to reorder regular
+ * loads/stores with regards to loads/stores done through these functions.
+ *
+ * This is useful when dealing with memory-mapped I/O (MMIO) where a store can
+ * have an effect other than just writing a value, or where sequential loads
+ * with no intervening stores can retrieve
+ * different values from the same location due to external stores to the location.
+ *
+ * These functions will, when possible, do the load/store as a single operation. In
+ * general, this is possible when the size of the operation is less than or equal to
+ * $(D (void*).sizeof), although some targets may support larger operations. If the
+ * load/store cannot be done as a single operation, multiple smaller operations will be used.
+ *
+ * These are not to be conflated with atomic operations. They do not guarantee any
+ * atomicity. This may be provided by coincidence as a result of the instructions
+ * used on the target, but this should not be relied on for portable programs.
+ * Further, no memory fences are implied by these functions.
+ * They should not be used for communication between threads.
+ * They may be used to guarantee a write or read cycle occurs at a specified address.
+ */
+
+ubyte  volatileLoad(ubyte * ptr);
+ushort volatileLoad(ushort* ptr);  /// ditto
+uint   volatileLoad(uint  * ptr);  /// ditto
+ulong  volatileLoad(ulong * ptr);  /// ditto
+
+void volatileStore(ubyte * ptr, ubyte  value);   /// ditto
+void volatileStore(ushort* ptr, ushort value);   /// ditto
+void volatileStore(uint  * ptr, uint   value);   /// ditto
+void volatileStore(ulong * ptr, ulong  value);   /// ditto
+
+@system unittest
+{
+    alias TT(T...) = T;
+
+    foreach (T; TT!(ubyte, ushort, uint, ulong))
+    {
+        T u;
+        T* p = &u;
+        volatileStore(p, 1);
+        T r = volatileLoad(p);
+        assert(r == u);
+    }
+}
+
 
 /**
  *  Calculates the number of set bits in a 32-bit integer.
@@ -305,17 +373,17 @@ unittest
 {
     version (AsmX86)
     {
-        asm { naked; }
+        asm pure nothrow @nogc { naked; }
 
         version (D_InlineAsm_X86_64)
         {
             version (Win64)
-                asm { mov EAX, ECX; }
+                asm pure nothrow @nogc { mov EAX, ECX; }
             else
-                asm { mov EAX, EDI; }
+                asm pure nothrow @nogc { mov EAX, EDI; }
         }
 
-        asm
+        asm pure nothrow @nogc
         {
             // Author: Tiago Gasiba.
             mov EDX, EAX;

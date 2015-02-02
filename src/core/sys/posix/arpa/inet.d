@@ -2,7 +2,7 @@
  * D header file for POSIX.
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Sean Kelly
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
  */
@@ -19,7 +19,7 @@ public import core.stdc.inttypes; // for uint32_t, uint16_t
 public import core.sys.posix.sys.socket; // for socklen_t
 
 version (Posix):
-extern (C):
+extern (C) nothrow @nogc:
 
 //
 // Required
@@ -61,10 +61,13 @@ version( linux )
 
     enum INET_ADDRSTRLEN = 16;
 
+    @trusted pure
+    {
     uint32_t htonl(uint32_t);
     uint16_t htons(uint16_t);
     uint32_t ntohl(uint32_t);
     uint16_t ntohs(uint16_t);
+    }
 
     in_addr_t       inet_addr(in char*);
     char*           inet_ntoa(in_addr);
@@ -83,10 +86,13 @@ else version( OSX )
 
     enum INET_ADDRSTRLEN = 16;
 
+    @trusted pure
+    {
     uint32_t htonl(uint32_t);
     uint16_t htons(uint16_t);
     uint32_t ntohl(uint32_t);
     uint16_t ntohs(uint16_t);
+    }
 
     in_addr_t       inet_addr(in char*);
     char*           inet_ntoa(in_addr);
@@ -105,14 +111,81 @@ else version( FreeBSD )
 
     enum INET_ADDRSTRLEN = 16;
 
+    @trusted pure
+    {
     uint32_t htonl(uint32_t);
     uint16_t htons(uint16_t);
     uint32_t ntohl(uint32_t);
     uint16_t ntohs(uint16_t);
+    }
 
     in_addr_t       inet_addr(in char*);
     char*           inet_ntoa(in_addr);
     const(char)*    inet_ntop(int, in void*, char*, socklen_t);
+    int             inet_pton(int, in char*, void*);
+}
+else version( Solaris )
+{
+    alias uint16_t in_port_t;
+    alias uint32_t in_addr_t;
+
+    struct in_addr
+    {
+        in_addr_t s_addr;
+    }
+    enum INET_ADDRSTRLEN = 16;
+
+    @trusted pure
+    {
+    uint32_t htonl(uint32_t);
+    uint16_t htons(uint16_t);
+    uint32_t ntohl(uint32_t);
+    uint16_t ntohs(uint16_t);
+    }
+
+    in_addr_t       inet_addr(in char*);
+    char*           inet_ntoa(in_addr);
+    const(char)*    inet_ntop(int, in void*, char*, socklen_t);
+    int             inet_pton(int, in char*, void*);
+}
+else version( Android )
+{
+    alias uint32_t in_addr_t;
+
+    struct in_addr
+    {
+        in_addr_t s_addr;
+    }
+
+    enum INET_ADDRSTRLEN = 16;
+
+    @safe pure extern (D)
+    {
+        private
+        {
+            uint32_t __swap32( uint32_t x )
+            {
+                uint32_t byte32_swap = (x & 0xff) << 24 | (x &0xff00) << 8 |
+                                     (x & 0xff0000) >> 8 | (x & 0xff000000) >> 24;
+                return byte32_swap;
+            }
+
+            uint16_t __swap16( uint16_t x )
+            {
+                uint16_t byte16_swap = (x & 0xff) << 8 | (x & 0xff00) >> 8;
+                return byte16_swap;
+            }
+        }
+
+        uint32_t htonl(uint32_t x) { return __swap32(x); }
+        uint16_t htons(uint16_t x) { return __swap16(x); }
+        uint32_t ntohl(uint32_t x) { return __swap32(x); }
+        uint16_t ntohs(uint16_t x) { return __swap16(x); }
+    }
+
+    in_addr_t       inet_addr(in char*);
+    char*           inet_ntoa(in_addr);
+    const(char)*    inet_ntop(int, in void*, char*, size_t);
     int             inet_pton(int, in char*, void*);
 }
 
@@ -135,6 +208,14 @@ else version( OSX )
     enum INET6_ADDRSTRLEN = 46;
 }
 else version( FreeBSD )
+{
+    enum INET6_ADDRSTRLEN = 46;
+}
+else version( Solaris )
+{
+    enum INET6_ADDRSTRLEN = 46;
+}
+else version( Android )
 {
     enum INET6_ADDRSTRLEN = 46;
 }

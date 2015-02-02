@@ -2,7 +2,7 @@
  * Implementation of invariant support routines.
  *
  * Copyright: Copyright Digital Mars 2007 - 2010.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Walter Bright
  */
 
@@ -24,7 +24,7 @@ void _d_invariant(Object o)
     // BUG: needs to be filename/line of caller, not library routine
     assert(o !is null); // just do null check, not invariant check
 
-    c = o.classinfo;
+    c = typeid(o);
     do
     {
         if (c.classInvariant)

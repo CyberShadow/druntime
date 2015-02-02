@@ -1,25 +1,17 @@
 /**
- * Basic containers for internal usage.
+ * Array container for internal usage.
  *
  * Copyright: Copyright Martin Nowak 2013.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Martin Nowak
- * Source: $(DRUNTIMESRC src/rt/util/_container.d)
  */
-module rt.util.container;
+module rt.util.container.array;
 
-private void* xrealloc(void* ptr, size_t sz)
-{
-    import core.stdc.stdlib, core.exception;
-
-    if (!sz) return free(ptr), null;
-    if (auto nptr = realloc(ptr, sz)) return nptr;
-    free(ptr), onOutOfMemoryError();
-    assert(0);
-}
+static import common = rt.util.container.common;
 
 struct Array(T)
 {
+nothrow:
     @disable this(this);
 
     ~this()
@@ -39,13 +31,11 @@ struct Array(T)
 
     @property void length(size_t nlength)
     {
-        static if (is(T == struct))
-            if (nlength < length)
-                foreach (ref val; _ptr[nlength .. length]) destroy(val);
-        _ptr = cast(T*)xrealloc(_ptr, nlength * T.sizeof);
-        static if (is(T == struct))
-            if (nlength > length)
-                foreach (ref val; _ptr[length .. nlength]) initialize(val);
+        if (nlength < length)
+            foreach (ref val; _ptr[nlength .. length]) common.destroy(val);
+        _ptr = cast(T*)common.xrealloc(_ptr, nlength * T.sizeof);
+        if (nlength > length)
+            foreach (ref val; _ptr[length .. nlength]) common.initialize(val);
         _length = nlength;
     }
 
@@ -100,19 +90,26 @@ struct Array(T)
         length = length - 1;
     }
 
-private:
-    static if (is(T == struct))
+    void remove(size_t idx)
+    in { assert(idx < length); }
+    body
     {
-        void initialize(ref T t)
-        {
-            import core.stdc.string;
-            if(auto p = typeid(T).init().ptr)
-                memcpy(&t, p, T.sizeof);
-            else
-                memset(&t, 0, T.sizeof);
-        }
+        foreach (i; idx .. length - 1)
+            _ptr[i] = _ptr[i+1];
+        popBack();
     }
 
+    void swap(ref Array other)
+    {
+        auto ptr = _ptr;
+        _ptr = other._ptr;
+        other._ptr = ptr;
+        immutable len = _length;
+        _length = other._length;
+        other._length = len;
+    }
+
+private:
     T* _ptr;
     size_t _length;
 }
@@ -139,6 +136,10 @@ unittest
     foreach (i, val; ary) assert(i == val);
     foreach_reverse (i, val; ary) assert(i == val);
 
+    ary.insertBack(2);
+    ary.remove(1);
+    assert(ary[] == [0, 2]);
+
     assert(!ary.empty);
     ary.reset();
     assert(ary.empty);
@@ -153,18 +154,18 @@ unittest
     static assert(!__traits(compiles, ary = ary2));
     static void foo(Array!size_t copy) {}
     static assert(!__traits(compiles, foo(ary)));
+
+    ary2.insertBack(0);
+    assert(ary.empty);
+    assert(ary2[] == [0]);
+    ary.swap(ary2);
+    assert(ary[] == [0]);
+    assert(ary2.empty);
 }
 
 unittest
 {
-    static struct RC
-    {
-        this(size_t* cnt) { ++*(_cnt = cnt); }
-        ~this() { if (_cnt) --*_cnt; }
-        this(this) { if (_cnt) ++*_cnt; }
-        size_t* _cnt;
-    }
-
+    alias RC = common.RC;
     Array!RC ary;
 
     size_t cnt;

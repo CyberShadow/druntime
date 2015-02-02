@@ -2,7 +2,7 @@
  * D header file for POSIX.
  *
  * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * License:   $(WEB www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
  * Authors:   Sean Kelly
  * Standards: The Open Group Base Specifications Issue 6, IEEE Std 1003.1, 2004 Edition
  */
@@ -18,7 +18,7 @@ private import core.sys.posix.config;
 private import core.sys.posix.signal; // for sigset_t
 
 version (Posix):
-extern (C):
+extern (C) nothrow @nogc:
 
 //
 // Required
@@ -82,7 +82,7 @@ version( linux )
             {
                 void * __pc;
                 void * __sp;
-                int __regs[8];
+                int[8] __regs;
                 void * __fp;
                 void * __gp;
             }
@@ -90,15 +90,31 @@ version( linux )
             {
                 long __pc;
                 long __sp;
-                long __regs[8];
+                long[8] __regs;
                 long __fp;
                 long __gp;
             }
             int __fpc_csr;
             version (MIPS_N64)
-                double __fpregs[8];
+                double[8] __fpregs;
             else
-                double __fpregs[6];
+                double[6] __fpregs;
+        }
+    }
+    else version (MIPS64)
+    {
+        struct __jmp_buf
+        {
+            long __pc;
+            long __sp;
+            long[8] __regs;
+            long __fp;
+            long __gp;
+            int __fpc_csr;
+            version (MIPS_N64)
+                double[8] __fpregs;
+            else
+                double[6] __fpregs;
         }
     }
     else
@@ -137,6 +153,23 @@ else version( FreeBSD )
     else
         static assert(0);
     alias _jmp_buf[1] jmp_buf;
+
+    int  setjmp(ref jmp_buf);
+    void longjmp(ref jmp_buf, int);
+}
+else version( Android )
+{
+    // <machine/setjmp.h>
+    version( X86 )
+    {
+        enum _JBLEN = 10;
+    }
+    else
+    {
+        static assert(false, "Architecture not supported.");
+    }
+
+    alias c_long[_JBLEN] jmp_buf;
 
     int  setjmp(ref jmp_buf);
     void longjmp(ref jmp_buf, int);
@@ -188,6 +221,13 @@ else version( FreeBSD )
     int  sigsetjmp(ref sigjmp_buf);
     void siglongjmp(ref sigjmp_buf, int);
 }
+else version( Android )
+{
+    alias c_long[_JBLEN + 1] sigjmp_buf;
+
+    int  sigsetjmp(ref sigjmp_buf, int);
+    void siglongjmp(ref sigjmp_buf, int);
+}
 
 //
 // XOpen (XSI)
@@ -203,6 +243,11 @@ version( linux )
     void _longjmp(ref jmp_buf, int);
 }
 else version( FreeBSD )
+{
+    int  _setjmp(ref jmp_buf);
+    void _longjmp(ref jmp_buf, int);
+}
+else version( Android )
 {
     int  _setjmp(ref jmp_buf);
     void _longjmp(ref jmp_buf, int);
