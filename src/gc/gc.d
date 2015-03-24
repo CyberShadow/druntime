@@ -1956,6 +1956,7 @@ struct Gcx
             immutable ncap = _cap ? 2 * _cap : initSize / Range.sizeof;
             auto p = cast(Range*)os_mem_map(ncap * Range.sizeof);
             if (p is null) onOutOfMemoryError();
+            version (VALGRIND) makeMemNoAccess(p[0..ncap]);
             if (_p !is null)
             {
                 p[0 .. _length] = _p[0 .. _length];
@@ -2625,6 +2626,7 @@ struct Pool
         poolsize = npages * PAGESIZE;
         assert(poolsize >= POOLSIZE);
         baseAddr = cast(byte *)os_mem_map(poolsize);
+        version (VALGRIND) makeMemNoAccess(baseAddr[0..poolsize]);
 
         // Some of the code depends on page alignment of memory pools
         assert((cast(size_t)baseAddr & (PAGESIZE - 1)) == 0);
