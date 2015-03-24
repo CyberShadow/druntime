@@ -2945,7 +2945,7 @@ struct LargeObjectPool
         while (searchStart < npages && pagetable[searchStart] == B_PAGE)
             searchStart += bPageOffsets[searchStart];
 
-        for (size_t i = searchStart; i < npages; )
+        for (size_t i = searchStart; i + n <= npages; )
         {
             assert(pagetable[i] == B_FREE);
             size_t p = 1;
