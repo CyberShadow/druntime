@@ -638,7 +638,7 @@ struct GC
 
                     if (newsz < psz)
                     {   // Shrink in place
-                        debug (MEMSTOMP) memset(p + size, 0xF2, psize - size);
+                        invalidate(p + size, psize - size, 0xF2);
                         lpool.freePages(pagenum + newsz, psz - newsz);
                     }
                     else if (pagenum + newsz <= pool.npages)
@@ -647,7 +647,7 @@ struct GC
                             if (binsz != B_FREE)
                                 goto Lmalloc;
 
-                        debug (MEMSTOMP) memset(p + psize, 0xF0, size - psize);
+                        invalidate(p + psize, size - psize, 0xF0);
                         debug(PRINTF) printFreeInfo(pool);
                         memset(&lpool.pagetable[pagenum + psz], B_PAGEPLUS, newsz - psz);
                         gcx.usedLargePages += newsz - psz;
@@ -769,7 +769,7 @@ struct GC
             }
             if (sz < minsz)
                 return 0;
-            debug (MEMSTOMP) memset(pool.baseAddr + (pagenum + psz) * PAGESIZE, 0xF0, sz * PAGESIZE);
+            invalidate(pool.baseAddr + (pagenum + psz) * PAGESIZE, sz * PAGESIZE, 0xF0);
             memset(lpool.pagetable + pagenum + psz, B_PAGEPLUS, sz);
             lpool.updateOffsets(pagenum);
             lpool.freepages -= sz;
@@ -875,14 +875,14 @@ struct GC
 
             // Free pages
             size_t npages = lpool.bPageOffsets[pagenum];
-            debug (MEMSTOMP) memset(p, 0xF2, npages * PAGESIZE);
+            invalidate(p, npages * PAGESIZE, 0xF2);
             lpool.freePages(pagenum, npages);
         }
         else
         {   // Add to free list
             List *list = cast(List*)p;
 
-            debug (MEMSTOMP) memset(p, 0xF2, binsize[bin]);
+            invalidate(p, binsize[bin], 0xF2);
 
             list.next = gcx.bucket[bin];
             list.pool = pool;
@@ -1749,7 +1749,7 @@ struct Gcx
         if (bits)
             pool.setBits((p - pool.baseAddr) >> pool.shiftBy, bits);
         //debug(PRINTF) printf("\tmalloc => %p\n", p);
-        debug (MEMSTOMP) memset(p, 0xF0, alloc_size);
+        invalidate(p, alloc_size, 0xF0);
         return p;
     }
 
@@ -1825,7 +1825,7 @@ struct Gcx
 
         auto p = pool.baseAddr + pn * PAGESIZE;
         debug(PRINTF) printf("Got large alloc:  %p, pt = %d, np = %d\n", p, pool.pagetable[pn], npages);
-        debug (MEMSTOMP) memset(p, 0xF1, size);
+        invalidate(p, size, 0xF1);
         alloc_size = npages * PAGESIZE;
         //debug(PRINTF) printf("\tp = %p\n", p);
 
@@ -2208,7 +2208,7 @@ struct Gcx
                         freedLargePages++;
                         pool.freepages++;
 
-                        debug (MEMSTOMP) memset(p, 0xF3, PAGESIZE);
+                        invalidate(p, PAGESIZE, 0xF3);
                         while (pn + 1 < pool.npages && pool.pagetable[pn + 1] == B_PAGEPLUS)
                         {
                             pn++;
@@ -2221,10 +2221,8 @@ struct Gcx
                             pool.freepages++;
                             freedLargePages++;
 
-                            debug (MEMSTOMP)
-                            {   p += PAGESIZE;
-                                memset(p, 0xF3, PAGESIZE);
-                            }
+                            p += PAGESIZE;
+                            invalidate(p, PAGESIZE, 0xF3);
                         }
                         pool.largestFree = pool.freepages; // invalidate
                     }
@@ -2266,7 +2264,7 @@ struct Gcx
                                 debug(COLLECT_PRINTF) printf("\tcollecting %p\n", p);
                                 log_free(sentinel_add(p));
 
-                                debug (MEMSTOMP) memset(p, 0xF3, size);
+                                invalidate(p, size, 0xF3);
 
                                 freed += size;
                             }
@@ -3066,7 +3064,7 @@ struct LargeObjectPool
             for (; pn + n < npages; ++n)
                 if (pagetable[pn + n] != B_PAGEPLUS)
                     break;
-            debug (MEMSTOMP) memset(baseAddr + pn * PAGESIZE, 0xF3, n * PAGESIZE);
+            invalidate(baseAddr + pn * PAGESIZE, n * PAGESIZE, 0xF3);
             freePages(pn, n);
         }
     }
@@ -3150,7 +3148,7 @@ struct SmallObjectPool
                 debug(COLLECT_PRINTF) printf("\tcollecting %p\n", p);
                 //log_free(sentinel_add(p));
 
-                debug (MEMSTOMP) memset(p, 0xF3, size);
+                invalidate(p, size, 0xF3);
             }
 
             if (freeBits)
@@ -3295,4 +3293,13 @@ unittest
 	p[1] = 0xF5;
 	assert(thrown);
 */
+}
+
+/* ============================ MEMSTOMP =============================== */
+
+
+void invalidate(void* p, size_t size, ubyte pattern) nothrow
+{
+    debug (MEMSTOMP) memset(p, pattern, size);
+    debug (VALGRIND) makeMemUndefined(p, size);
 }
