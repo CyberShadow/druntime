@@ -638,7 +638,7 @@ struct GC
 
                     if (newsz < psz)
                     {   // Shrink in place
-                        invalidate(p + size, psize - size, 0xF2);
+                        invalidate(p + size, psize - size, 0xF2, false);
                         lpool.freePages(pagenum + newsz, psz - newsz);
                     }
                     else if (pagenum + newsz <= pool.npages)
@@ -647,7 +647,7 @@ struct GC
                             if (binsz != B_FREE)
                                 goto Lmalloc;
 
-                        invalidate(p + psize, size - psize, 0xF0);
+                        invalidate(p + psize, size - psize, 0xF0, true);
                         debug(PRINTF) printFreeInfo(pool);
                         memset(&lpool.pagetable[pagenum + psz], B_PAGEPLUS, newsz - psz);
                         gcx.usedLargePages += newsz - psz;
@@ -769,7 +769,7 @@ struct GC
             }
             if (sz < minsz)
                 return 0;
-            invalidate(pool.baseAddr + (pagenum + psz) * PAGESIZE, sz * PAGESIZE, 0xF0);
+            invalidate(pool.baseAddr + (pagenum + psz) * PAGESIZE, sz * PAGESIZE, 0xF0, true);
             memset(lpool.pagetable + pagenum + psz, B_PAGEPLUS, sz);
             lpool.updateOffsets(pagenum);
             lpool.freepages -= sz;
@@ -875,14 +875,14 @@ struct GC
 
             // Free pages
             size_t npages = lpool.bPageOffsets[pagenum];
-            invalidate(p, npages * PAGESIZE, 0xF2);
+            invalidate(p, npages * PAGESIZE, 0xF2, false);
             lpool.freePages(pagenum, npages);
         }
         else
         {   // Add to free list
             List *list = cast(List*)p;
 
-            invalidate(p, binsize[bin], 0xF2);
+            invalidate(p, binsize[bin], 0xF2, false);
 
             list.next = gcx.bucket[bin];
             list.pool = pool;
@@ -1749,7 +1749,7 @@ struct Gcx
         if (bits)
             pool.setBits((p - pool.baseAddr) >> pool.shiftBy, bits);
         //debug(PRINTF) printf("\tmalloc => %p\n", p);
-        invalidate(p, alloc_size, 0xF0);
+        invalidate(p, alloc_size, 0xF0, true);
         return p;
     }
 
@@ -1825,7 +1825,7 @@ struct Gcx
 
         auto p = pool.baseAddr + pn * PAGESIZE;
         debug(PRINTF) printf("Got large alloc:  %p, pt = %d, np = %d\n", p, pool.pagetable[pn], npages);
-        invalidate(p, size, 0xF1);
+        invalidate(p, size, 0xF1, true);
         alloc_size = npages * PAGESIZE;
         //debug(PRINTF) printf("\tp = %p\n", p);
 
@@ -2208,7 +2208,7 @@ struct Gcx
                         freedLargePages++;
                         pool.freepages++;
 
-                        invalidate(p, PAGESIZE, 0xF3);
+                        invalidate(p, PAGESIZE, 0xF3, false);
                         while (pn + 1 < pool.npages && pool.pagetable[pn + 1] == B_PAGEPLUS)
                         {
                             pn++;
@@ -2222,7 +2222,7 @@ struct Gcx
                             freedLargePages++;
 
                             p += PAGESIZE;
-                            invalidate(p, PAGESIZE, 0xF3);
+                            invalidate(p, PAGESIZE, 0xF3,  false);
                         }
                         pool.largestFree = pool.freepages; // invalidate
                     }
@@ -2264,7 +2264,7 @@ struct Gcx
                                 debug(COLLECT_PRINTF) printf("\tcollecting %p\n", p);
                                 log_free(sentinel_add(p));
 
-                                invalidate(p, size, 0xF3);
+                                invalidate(p, size, 0xF3, false);
 
                                 freed += size;
                             }
@@ -3064,7 +3064,7 @@ struct LargeObjectPool
             for (; pn + n < npages; ++n)
                 if (pagetable[pn + n] != B_PAGEPLUS)
                     break;
-            invalidate(baseAddr + pn * PAGESIZE, n * PAGESIZE, 0xF3);
+            invalidate(baseAddr + pn * PAGESIZE, n * PAGESIZE, 0xF3, false);
             freePages(pn, n);
         }
     }
@@ -3148,7 +3148,7 @@ struct SmallObjectPool
                 debug(COLLECT_PRINTF) printf("\tcollecting %p\n", p);
                 //log_free(sentinel_add(p));
 
-                invalidate(p, size, 0xF3);
+                invalidate(p, size, 0xF3, false);
             }
 
             if (freeBits)
@@ -3297,9 +3297,17 @@ unittest
 
 /* ============================ MEMSTOMP =============================== */
 
-
-void invalidate(void* p, size_t size, ubyte pattern) nothrow
+/// Mark the specified memory region as uninitialized -
+/// reading from this region is an error.
+/// If writable is false, writing to it is also an error.
+void invalidate(void* p, size_t size, ubyte pattern, bool writable) nothrow
 {
     debug (MEMSTOMP) memset(p, pattern, size);
-    debug (VALGRIND) makeMemUndefined(p, size);
+    debug (VALGRIND)
+    {
+        if (writable)
+            makeMemUndefined(p, size);
+        else
+            makeMemNoAccess(p, size);
+    }
 }
