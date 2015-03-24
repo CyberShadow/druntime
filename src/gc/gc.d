@@ -1977,8 +1977,6 @@ struct Gcx
      */
     void mark(void *pbot, void *ptop) nothrow
     {
-        debug(VALGRIND) makeMemDefined(pbot[0..ptop-pbot]);
-
         void **p1 = cast(void **)pbot;
         void **p2 = cast(void **)ptop;
 
@@ -1994,6 +1992,7 @@ struct Gcx
         for (; p1 < p2 && stackPos != stack.length; p1++)
         {
             auto p = cast(byte *)(*p1);
+            debug (VALGRIND) makeMemDefined((&p)[0..1]);
 
             //if (log) debug(PRINTF) printf("\tmark %p\n", p);
             if (p >= pooltable.minAddr && p < pooltable.maxAddr)
