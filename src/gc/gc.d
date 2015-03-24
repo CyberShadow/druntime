@@ -884,8 +884,8 @@ struct GC
 
             invalidate(p, binsize[bin], 0xF2, false);
 
-            list.next = gcx.bucket[bin];
-            list.pool = pool;
+            undefinedWrite(list.next, gcx.bucket[bin]);
+            undefinedWrite(list.pool, pool);
             gcx.bucket[bin] = list;
         }
 
@@ -1744,8 +1744,8 @@ struct Gcx
         assert(p !is null);
 
         // Return next item from free list
-        bucket[bin] = (cast(List*)p).next;
-        auto pool = (cast(List*)p).pool;
+        bucket[bin] = undefinedRead((cast(List*)p).next);
+        auto pool = undefinedRead((cast(List*)p).pool);
         if (bits)
             pool.setBits((p - pool.baseAddr) >> pool.shiftBy, bits);
         //debug(PRINTF) printf("\tmalloc => %p\n", p);
@@ -2118,9 +2118,9 @@ struct Gcx
         // Mark each free entry, so it doesn't get scanned
         for (n = 0; n < B_PAGE; n++)
         {
-            for (List *list = bucket[n]; list; list = list.next)
+            for (List *list = bucket[n]; list; list = undefinedRead(list.next))
             {
-                pool = list.pool;
+                pool = undefinedRead(list.pool);
                 assert(pool);
                 pool.freebits.set(cast(size_t)(cast(byte*)list - pool.baseAddr) / 16);
             }
@@ -2336,8 +2336,8 @@ struct Gcx
                         if (!pool.freebits.test(biti))
                             continue;
                         auto elem = cast(List *)(p + u);
-                        elem.pool = pool;
-                        *tail[bin] = elem;
+                        undefinedWrite(elem.pool, pool);
+                        undefinedWrite(*tail[bin], elem);
                         tail[bin] = &elem.next;
                     }
                 }
@@ -2345,7 +2345,7 @@ struct Gcx
         }
         // terminate tail list
         foreach (ref next; tail)
-            *next = null;
+            undefinedWrite(*next, null);
 
         assert(freedSmallPages <= usedSmallPages);
         usedSmallPages -= freedSmallPages;
@@ -3183,11 +3183,11 @@ struct SmallObjectPool
 
         for (; p < ptop; p += size)
         {
-            (cast(List *)p).next = cast(List *)(p + size);
-            (cast(List *)p).pool = &base;
+            undefinedWrite((cast(List *)p).next, cast(List *)(p + size));
+            undefinedWrite((cast(List *)p).pool, &base);
         }
-        (cast(List *)p).next = null;
-        (cast(List *)p).pool = &base;
+        undefinedWrite((cast(List *)p).next, null);
+        undefinedWrite((cast(List *)p).pool, &base);
         return first;
     }
 }
@@ -3310,4 +3310,34 @@ void invalidate(void* p, size_t size, ubyte pattern, bool writable) nothrow
         else
             makeMemNoAccess(p[0..size]);
     }
+}
+
+/// Read memory that should otherwise be marked as unreadable
+/// (e.g. free lists overlapped with unallocated heap objects).
+T undefinedRead(T)(ref T var) nothrow
+{
+    debug (VALGRIND)
+    {
+        auto varArr = (&var)[0..1];
+        disableAddrReportingInRange(varArr);
+        T result = var;
+        enableAddrReportingInRange(varArr);
+        return result;
+    }
+    else
+        return var;
+}
+
+/// Write memory that should otherwise be marked as unwritable.
+void undefinedWrite(T)(ref T var, T value) nothrow
+{
+    debug (VALGRIND)
+    {
+        auto varArr = (&var)[0..1];
+        disableAddrReportingInRange(varArr);
+        var = value;
+        enableAddrReportingInRange(varArr);
+    }
+    else
+        var = value;
 }
