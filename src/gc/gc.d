@@ -58,6 +58,8 @@ version (GNU) import gcc.builtins;
 debug (PRINTF_TO_FILE) import core.stdc.stdio : fprintf, fopen, fflush, FILE;
 else                   import core.stdc.stdio : printf; // needed to output profiling results
 
+debug (VALGRIND) import etc.valgrind.valgrind;
+
 import core.time;
 alias currTime = MonoTime.currTime;
 
@@ -1975,6 +1977,8 @@ struct Gcx
      */
     void mark(void *pbot, void *ptop) nothrow
     {
+        debug(VALGRIND) makeMemDefined(pbot, ptop-pbot);
+
         void **p1 = cast(void **)pbot;
         void **p2 = cast(void **)ptop;
 

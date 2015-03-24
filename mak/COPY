@@ -154,4 +154,5 @@ COPY=\
 	$(IMPDIR)\core\sys\windows\windows.d \
 	$(IMPDIR)\core\sys\windows\winsock2.d \
 	\
+	$(IMPDIR)\etc\valgrind\valgrind.d \
 	$(IMPDIR)\etc\linux\memoryerror.d

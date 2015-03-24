@@ -102,7 +102,7 @@ SRCS:=$(subst \,/,$(SRCS))
 # NOTE: a pre-compiled minit.obj has been provided in dmd for Win32	 and
 #       minit.asm is not used by dmd for Linux
 
-OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/bss_section.o $(OBJDIR)/threadasm.o
+OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/bss_section.o $(OBJDIR)/threadasm.o $(OBJDIR)/valgrind.o
 
 # build with shared library support
 SHARED=$(if $(findstring $(OS),linux freebsd),1,)
@@ -165,6 +165,10 @@ $(OBJDIR)/errno_c.o : src/core/stdc/errno.c
 
 $(OBJDIR)/threadasm.o : src/core/threadasm.S
 	@mkdir -p $(OBJDIR)
+	$(CC) -c $(CFLAGS) $< -o$@
+
+$(OBJDIR)/valgrind.o : src/etc/valgrind/valgrind.c
+	@mkdir -p `dirname $@`
 	$(CC) -c $(CFLAGS) $< -o$@
 
 ######################## Create a shared library ##############################
