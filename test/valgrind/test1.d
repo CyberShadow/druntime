@@ -3,7 +3,7 @@
 
 void main()
 {
-	foreach (i; 0..1000)
+	foreach (i; 0..100)
 	{
 		string s;
 		foreach (j; 0..1000)

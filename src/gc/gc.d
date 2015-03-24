@@ -1992,7 +1992,7 @@ struct Gcx
         //printf("marking range: [%p..%p] (%#zx)\n", p1, p2, cast(size_t)p2 - cast(size_t)p1);
         for (; p1 < p2 && stackPos != stack.length; p1++)
         {
-            auto p = cast(byte *)(*p1);
+            auto p = cast(byte *)undefinedRead(*p1);
             debug (VALGRIND) makeMemDefined((&p)[0..1]);
 
             //if (log) debug(PRINTF) printf("\tmark %p\n", p);
@@ -3211,13 +3211,22 @@ debug (SENTINEL)
     void sentinel_init(void *p, size_t size) nothrow
     {
         *sentinel_size(p) = size;
-        *sentinel_pre(p) = SENTINEL_PRE;
-        *sentinel_post(p) = SENTINEL_POST;
+        debug (VALGRIND)
+        {
+            makeMemNoAccess(sentinel_pre(p)[0..1]);
+            makeMemNoAccess(sentinel_post(p)[0..1]);
+        }
+        else
+        {
+            *sentinel_pre(p) = SENTINEL_PRE;
+            *sentinel_post(p) = SENTINEL_POST;
+        }
     }
 
 
     void sentinel_Invariant(const void *p) nothrow
     {
+        debug (VALGRIND) {} else
         debug
         {
             assert(*sentinel_pre(p) == SENTINEL_PRE);
