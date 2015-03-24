@@ -1977,7 +1977,7 @@ struct Gcx
      */
     void mark(void *pbot, void *ptop) nothrow
     {
-        debug(VALGRIND) makeMemDefined(pbot, ptop-pbot);
+        debug(VALGRIND) makeMemDefined(pbot[0..ptop-pbot]);
 
         void **p1 = cast(void **)pbot;
         void **p2 = cast(void **)ptop;
@@ -3306,8 +3306,8 @@ void invalidate(void* p, size_t size, ubyte pattern, bool writable) nothrow
     debug (VALGRIND)
     {
         if (writable)
-            makeMemUndefined(p, size);
+            makeMemUndefined(p[0..size]);
         else
-            makeMemNoAccess(p, size);
+            makeMemNoAccess(p[0..size]);
     }
 }
