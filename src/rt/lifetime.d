@@ -1317,12 +1317,15 @@ int hasArrayFinalizerInSegment(void* p, size_t size, in void[] segment) nothrow
     return cast(size_t)(cast(void*)si.xdtor - segment.ptr) < segment.length;
 }
 
+debug (VALGRIND) import etc.valgrind.valgrind;
+
 // called by the GC
 void finalize_array2(void* p, size_t size) nothrow
 {
     debug(PRINTF) printf("rt_finalize_array2(p = %p)\n", p);
 
     TypeInfo_Struct si = void;
+    debug (VALGRIND) disableAddrReportingInRange(p[0..size]);
     if(size <= 256)
     {
         si = *cast(TypeInfo_Struct*)(p + size - size_t.sizeof);
@@ -1339,6 +1342,7 @@ void finalize_array2(void* p, size_t size) nothrow
         size = *cast(size_t*)p;
         p += LARGEPREFIX;
     }
+    debug (VALGRIND) enableAddrReportingInRange(p[0..size]);
 
     try
     {
