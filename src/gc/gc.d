@@ -458,6 +458,8 @@ struct GC
             gcLock.unlock();
         }
 
+        invalidate(p, *alloc_size, 0xF0, true);
+
         if (!(bits & BlkAttr.NO_SCAN))
         {
             memset(p + size, 0, *alloc_size - size);
@@ -521,6 +523,9 @@ struct GC
             p = mallocNoSync(size, bits, *alloc_size, ti);
             gcLock.unlock();
         }
+
+        debug (VALGRIND) makeMemUndefined(p[0..size]);
+        invalidate(p + size, *alloc_size - size, 0xF0, true);
 
         memset(p, 0, size);
         if (!(bits & BlkAttr.NO_SCAN))
